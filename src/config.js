@@ -2,23 +2,23 @@
 // Lưu ý: KHÔNG bao giờ lưu giá trị token, chỉ lưu các mốc thời gian.
 
 export const DEFAULT_CONFIG = {
-  tokenCookie: "access_token",
-  marginSec: 180,           // refresh trước khi hết hạn bao nhiêu giây
-  verifyDelaySec: 60,       // chờ bao lâu sau khi reload để kiểm tra token mới
-  minRetryGapSec: 300,      // khoảng cách tối thiểu giữa 2 lần thử
-  maxFailures: 3,           // thất bại liên tiếp bao nhiêu lần thì dừng
+  tokenCookie: "privateToken",
+  marginSec: 180, // refresh trước khi hết hạn bao nhiêu giây
+  verifyDelaySec: 60, // chờ bao lâu sau khi reload để kiểm tra token mới
+  minRetryGapSec: 300, // khoảng cách tối thiểu giữa 2 lần thử
+  maxFailures: 3, // thất bại liên tiếp bao nhiêu lần thì dừng
   enabled: true,
 };
 
 export const DEFAULT_STATE = {
-  status: "unbound",        // unbound | idle | scheduled | ok | refreshing | logged_out | needs_attention | stopped | error
+  status: "unbound", // unbound | idle | scheduled | ok | refreshing | logged_out | needs_attention | stopped | error
   message: "",
-  exp: null,                // exp của access token hiện tại (giây)
-  nextRefreshAt: null,      // ms
-  lastAttemptAt: null,      // ms
-  lastSuccessAt: null,      // ms
+  exp: null, // exp của access token hiện tại (giây)
+  nextRefreshAt: null, // ms
+  lastAttemptAt: null, // ms
+  lastSuccessAt: null, // ms
   failCount: 0,
-  attemptExp: null,         // exp trước khi thử refresh
+  attemptExp: null, // exp trước khi thử refresh
 };
 
 /**
@@ -77,7 +77,10 @@ export async function setState(patch) {
 export function normalizeOrigin(url) {
   try {
     const u = new URL(String(url).trim());
-    if (u.protocol !== "https:" && !(u.protocol === "http:" && u.hostname === "localhost")) {
+    if (
+      u.protocol !== "https:" &&
+      !(u.protocol === "http:" && u.hostname === "localhost")
+    ) {
       return null;
     }
     return u.origin;
