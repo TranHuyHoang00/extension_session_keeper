@@ -29,6 +29,8 @@
         <dd id="cookieName">–</dd>
         <dt>Cách làm mới</dt>
         <dd id="timingText">–</dd>
+        <dt>Đẩy token</dt>
+        <dd id="relayText">–</dd>
         <dt>Token hết hạn</dt>
         <dd id="exp">–</dd>
         <dt>Làm mới lúc</dt>
@@ -101,6 +103,22 @@
           Bật tự động giữ phiên cho website này
         </label>
 
+        <details class="relay">
+          <summary>Nâng cao: đẩy token lên server (mặc định tắt)</summary>
+          <p class="hint warn-text">
+            Khi bật, extension sẽ <b>gửi giá trị token ra ngoài</b> để máy/dự án khác lấy.
+            Chỉ dùng với server bạn kiểm soát, luôn đặt khóa bí mật, và nên hỏi bộ phận bảo mật trước.
+          </p>
+          <label>
+            URL server nhận token (để trống = tắt)
+            <input id="relayUrl" type="url" placeholder="https://xxxx.ngrok-free.app/token" />
+          </label>
+          <label>
+            Khóa bí mật (gửi kèm trong header)
+            <input id="relayKey" type="text" placeholder="chuỗi bí mật, trùng với server" />
+          </label>
+        </details>
+
         <div class="actions">
           <button type="submit">Lưu</button>
           <button type="button" id="checkCookie" class="secondary">Kiểm tra cookie</button>
@@ -110,7 +128,8 @@
       <p id="settingsResult" class="message"></p>
       <p class="hint">
         Cài đặt được lưu theo website, nên lần sau gắn lại tab của website này sẽ dùng luôn.
-        Extension không tự gọi API, không lưu giá trị token và không mở tab mới.
+        Extension không tự gọi API và không mở tab mới. Mặc định cũng không gửi token đi đâu;
+        chỉ khi bạn bật "đẩy token lên server" ở trên thì token mới được gửi tới server đó.
       </p>
     </section>
 

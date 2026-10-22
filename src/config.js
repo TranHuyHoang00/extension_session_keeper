@@ -24,7 +24,16 @@ export const DEFAULT_SITE = {
   afterSec: 10, // (after) chờ bao nhiêu giây sau khi token hết hạn rồi mới reload
   marginSec: 180, // (before) reload trước khi hết hạn bao nhiêu giây
   enabled: true,
+  // (Tuỳ chọn, mặc định TẮT) Đẩy token mới lên một server cục bộ để máy/dự án khác lấy.
+  // Bỏ trống relayUrl = tắt. Khi bật, extension sẽ GỬI giá trị token ra ngoài, nên chỉ
+  // dùng với server bạn kiểm soát và luôn đặt relayKey làm khóa bí mật.
+  relayUrl: "",
+  relayKey: "",
 };
+
+export function relayEnabled(site) {
+  return Boolean(site.relayUrl && /^https?:\/\//.test(site.relayUrl));
+}
 
 /** Thời điểm (ms) nên reload tab để website làm mới token. */
 export function refreshTargetMs(exp, site) {

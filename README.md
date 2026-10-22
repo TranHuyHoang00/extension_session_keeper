@@ -111,8 +111,33 @@ Cách thử nhanh, không phải chờ 24 giờ: mở DevTools → Application �
   Nếu chỉ dùng cho một số website cố định của công ty, nên thu hẹp danh sách này trong `manifest.json`,
   ví dụ `"https://*.congty.vn/*"`, để bộ phận bảo mật dễ duyệt hơn.
 - Extension chỉ đọc cookie và reload tab của những tab bạn đã gắn; các trang khác không bị đụng tới.
-- **Không lưu giá trị token** vào storage, không gửi token đi đâu; chỉ lưu các mốc thời gian.
+- **Không lưu giá trị token** vào storage, và **mặc định không gửi token đi đâu**; chỉ lưu các mốc thời gian.
 - Script kiểm tra trang chỉ trả về pathname, không trả query string.
+
+## Đẩy token lên server (tuỳ chọn, mặc định tắt)
+
+Dùng khi một máy/dự án **khác** cần lấy token mới nhất mà extension đang giữ. Trong Cài đặt của
+một website, mở mục **Nâng cao → đẩy token lên server** và nhập:
+
+- **URL server nhận token**: endpoint `POST` của server bạn dựng (ví dụ qua ngrok).
+- **Khóa bí mật**: chuỗi trùng với server, gửi trong header `X-Session-Keeper-Key`.
+
+Mỗi khi website đó có token mới, extension gửi:
+
+```
+POST <relayUrl>
+X-Session-Keeper-Key: <relayKey>
+Content-Type: application/json
+
+{ "site": "app.congty.vn", "cookie": "privateToken", "token": "<JWT>", "exp": 1792722565 }
+```
+
+Dự án bên kia gọi `GET` lên server đó (kèm cùng khóa) để lấy token mới nhất.
+
+**Cảnh báo:** bật tính năng này nghĩa là extension **gửi giá trị token production ra ngoài trình duyệt**.
+Chỉ dùng với server bạn kiểm soát, luôn đặt khóa bí mật, dùng HTTPS, và **nên hỏi bộ phận bảo mật trước**.
+Nếu mục tiêu là để một máy tự động gọi API, giải pháp chuẩn hơn là xin **tài khoản dịch vụ (client credentials)**.
+Server nhận token nằm ở một repo riêng, không thuộc extension này.
 
 ## Cấu trúc
 

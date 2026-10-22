@@ -119,3 +119,7 @@ button.tiny { font-size: 12px; padding: 2px 8px; }
 .terminal-bar { flex-wrap: nowrap; }
 .terminal-title { flex: none; }
 .terminal-bar select { flex: 1 1 0; min-width: 0; }
+.relay { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+.relay summary { cursor: pointer; color: var(--muted); }
+.relay label { margin-top: 10px; }
+.warn-text { color: var(--warn); }

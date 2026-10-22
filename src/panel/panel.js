@@ -1,4 +1,4 @@
-import { getSiteSettings, saveSiteSettings, hostOf, describeTiming } from "../config.js";
+import { getSiteSettings, saveSiteSettings, hostOf, describeTiming, relayEnabled } from "../config.js";
 import { getExp } from "../jwt.js";
 import { LOG_KEY, getLogs, clearLogs, formatTime, formatLine, log } from "../log.js";
 
@@ -74,6 +74,9 @@ async function render() {
   if (binding) {
     $("cookieName").textContent = settings.tokenCookie;
     $("timingText").textContent = describeTiming(settings);
+    $("relayText").textContent = relayEnabled(settings)
+      ? `Bật → ${hostOf(settings.relayUrl)}`
+      : "Tắt";
     $("exp").textContent = state.exp ? fmt(state.exp * 1000) : "–";
     $("next").textContent = fmt(state.nextRefreshAt);
     $("last").textContent = fmt(state.lastSuccessAt);
@@ -138,6 +141,8 @@ async function openSettings() {
   $("marginSec").value = s.marginSec;
   updateTimingFields();
   $("enabled").checked = s.enabled;
+  $("relayUrl").value = s.relayUrl || "";
+  $("relayKey").value = s.relayKey || "";
   showSettingsResult("");
   show($("mainView"), false);
   show($("settingsView"), true);
@@ -177,6 +182,8 @@ $("settingsForm").addEventListener("submit", async (e) => {
     afterSec: Math.min(3600, Math.max(0, Number($("afterSec").value) || 0)),
     marginSec: Math.max(60, Number($("marginSec").value) || 180),
     enabled: $("enabled").checked,
+    relayUrl: $("relayUrl").value.trim(),
+    relayKey: $("relayKey").value.trim(),
   });
   showSettingsResult(`Đã lưu cài đặt cho ${hostOf(origin)}.`, "ok");
 });

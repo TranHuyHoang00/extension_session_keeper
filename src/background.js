@@ -23,6 +23,7 @@ import {
   clearAllBindings,
   findBindingByOrigin,
   getSiteSettings,
+  relayEnabled,
   refreshTargetMs,
   migrateLegacy,
   normalizeOrigin,
@@ -72,6 +73,29 @@ async function readTokenExp(cfg) {
   const cookie = await chrome.cookies.get({ url: cfg.siteUrl, name: cfg.tokenCookie });
   if (!cookie) return { found: false, exp: null };
   return { found: true, exp: getExp(cookie.value) };
+}
+
+// (Tuỳ chọn, mặc định tắt) Đẩy token mới lên server cục bộ để máy/dự án khác lấy.
+// Chỉ gửi khi website có cấu hình relayUrl. Luôn kèm khóa bí mật. Không ghi token ra log.
+async function relayToken(tabId, cfg, exp) {
+  if (!relayEnabled(cfg)) return;
+  const cookie = await chrome.cookies.get({ url: cfg.siteUrl, name: cfg.tokenCookie });
+  if (!cookie) return;
+  const host = hostOf(cfg.siteUrl);
+  try {
+    const res = await fetch(cfg.relayUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Session-Keeper-Key": cfg.relayKey || "" },
+      body: JSON.stringify({ site: host, cookie: cfg.tokenCookie, token: cookie.value, exp }),
+    });
+    if (res.ok) {
+      await tlog(tabId, "info", `Đã đẩy token mới lên ${hostOf(cfg.relayUrl)}.`);
+    } else {
+      await tlog(tabId, "warn", `Đẩy token thất bại: server trả ${res.status}.`);
+    }
+  } catch (err) {
+    await tlog(tabId, "warn", `Không gửi được token lên server: ${err?.message || err}`);
+  }
 }
 
 async function getTab(tabId) {
@@ -380,6 +404,7 @@ async function onTokenCookieChanged(tabId) {
       lastSuccessAt: Date.now(),
       attemptExp: null,
     });
+    await relayToken(tabId, cfg, exp); // đẩy token lên server cục bộ nếu website này có bật
   }
   return schedule(tabId);
 }
