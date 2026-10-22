@@ -8,26 +8,21 @@
 <body class="options">
   <h1>Session Keeper – Cài đặt</h1>
   <p class="hint">
-    Extension không tự gọi API và không lưu giá trị token. Nó chỉ đọc thời điểm hết hạn,
-    rồi reload một tab của website trước khi token hết hạn để website tự làm mới.
+    Cách dùng: mở website cần giữ phiên, bấm icon extension và chọn <b>Gắn vào tab này</b>.
+    Extension chỉ làm việc với đúng tab đó: trước khi token hết hạn, nó reload tab để website
+    tự làm mới token. Extension không tự gọi API, không lưu giá trị token và không mở tab mới.
   </p>
 
   <form id="form">
     <label>
-      Địa chỉ website
-      <input id="siteUrl" type="url" placeholder="https://app.congty.vn" required />
-      <small>Chỉ cần phần gốc (https + tên miền). Extension chỉ xin quyền cho đúng địa chỉ này.</small>
-    </label>
-
-    <label>
       Tên cookie chứa access token (JWT)
       <input id="tokenCookie" type="text" placeholder="access_token" required />
-      <small>Xem trong DevTools → Application → Cookies.</small>
+      <small>Xem trong DevTools → Application → Cookies của website.</small>
     </label>
 
     <label>
       Làm mới trước khi hết hạn (giây)
-      <input id="marginSec" type="number" min="60" max="3600" step="30" required />
+      <input id="marginSec" type="number" min="60" max="86400" step="30" required />
     </label>
 
     <label class="row">
@@ -41,6 +36,7 @@
     </div>
   </form>
 
+  <p id="bound" class="hint"></p>
   <p id="result" class="message"></p>
 
   <script type="module" src="options.js"></script>

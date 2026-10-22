@@ -21,6 +21,8 @@ export function createChromeMock() {
     removedTabs: [],
     notifications: [],
     badge: "",
+    tabBadges: {},
+    created: [],
     pageState: { captcha: false, login: false, path: "/" },
     nextTabId: 100,
     granted: true,
@@ -48,6 +50,7 @@ export function createChromeMock() {
       create: async ({ url, active }) => {
         const t = { id: db.nextTabId++, url, active: !!active, windowId: 1 };
         db.tabs.push(t);
+        db.created.push(t.id);
         return t;
       },
       reload: async (id) => { db.reloaded.push(id); },
@@ -62,11 +65,15 @@ export function createChromeMock() {
         db.removedTabs.push(id);
       },
       onRemoved: event(),
+      onUpdated: event(),
     },
     windows: { update: async () => {} },
     scripting: { executeScript: async () => [{ result: db.pageState }] },
     action: {
-      setBadgeText: async ({ text }) => { db.badge = text; },
+      setBadgeText: async ({ tabId, text }) => {
+        if (tabId == null) db.badge = text;
+        else db.tabBadges[tabId] = text;
+      },
       setBadgeBackgroundColor: async () => {},
     },
     notifications: {

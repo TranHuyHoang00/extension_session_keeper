@@ -11,9 +11,18 @@
     <span id="status" class="pill">…</span>
   </header>
 
+  <section id="bindBox" class="bind">
+    <p id="bindText"></p>
+    <div class="actions">
+      <button id="bind">Gắn vào tab này</button>
+      <button id="unbind" class="secondary">Bỏ gắn</button>
+      <button id="goto" class="secondary">Mở tab đã gắn</button>
+    </div>
+  </section>
+
   <p id="message" class="message"></p>
 
-  <dl class="facts">
+  <dl class="facts" id="facts">
     <dt>Website</dt><dd id="site">–</dd>
     <dt>Token hết hạn</dt><dd id="exp">–</dd>
     <dt>Làm mới lúc</dt><dd id="next">–</dd>

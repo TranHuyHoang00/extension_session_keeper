@@ -67,3 +67,9 @@ button:disabled { opacity: 0.5; cursor: default; }
   font: inherit; padding: 6px 8px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--bg); color: var(--fg);
 }
+
+[hidden] { display: none !important; }
+.bind {
+  margin: 12px 0; padding: 10px; border: 1px solid var(--border); border-radius: 8px;
+}
+.bind p { margin: 0 0 8px; }
