@@ -671,21 +671,3 @@ if (typeof self !== "undefined" && self.addEventListener) {
     log("error", `Lỗi chưa xử lý: ${e?.reason?.message || e?.reason || e}`)
   );
 }
-
-// Cho phép test đơn vị gọi trực tiếp các hàm này.
-export const __test__ = {
-  schedule,
-  scheduleAll,
-  startRefresh,
-  verifyRefresh,
-  onTokenCookieChanged,
-  cookieDomainMatches,
-  resetTab,
-  bindTab,
-  unbind,
-  onBrowserStartup,
-  openPanelForTab,
-  disablePanelGlobally,
-  getStatusFor,
-  parseAlarm,
-};

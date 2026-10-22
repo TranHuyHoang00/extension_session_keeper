@@ -127,28 +127,11 @@ src/
   panel/             side panel theo từng tab (gắn / bỏ gắn tab, trạng thái, cài đặt, lịch sử)
   ui.css
 icons/
-test/                test logic background với chrome giả lập (Node)
 ```
-
-## Website test trên máy
-
-`test-site/server.mjs` là website giả lập (không cần cài thư viện) để test mà không phải chờ token 24 giờ.
-Nó mô phỏng đúng kiểu "API lỗi 401 rồi mới refresh", có xoay vòng refresh token và thu hồi phiên khi refresh token bị dùng lại.
-
-```bash
-ACCESS_TTL=60 npm run test-site     # token sống 60 giây
-```
-
-Mở `http://localhost:4000`, đăng nhập `demo` / `demo`, rồi bấm icon extension.
-Khoảng hơn 1 phút sau, khung Lịch sử sẽ báo extension reload tab và có token mới.
-
-Tuỳ chọn: `PORT`, `ACCESS_TTL`, `REFRESH_TTL`, `COOKIE_EXPIRES_WITH_TOKEN=0` (giữ cookie sau khi token hết hạn),
-`CAPTCHA=1` (trang đăng nhập có CAPTCHA giả để test phát hiện CAPTCHA).
 
 ## Phát triển
 
 ```bash
-npm test        # chạy test (Node 18+), không cần cài thư viện
 npm run check   # kiểm tra cú pháp
 npm run zip     # đóng gói session-keeper.zip
 ```
