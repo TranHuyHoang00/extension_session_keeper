@@ -9,7 +9,7 @@ và extension không bao giờ tự mở tab mới.
 
 ## Cách hoạt động
 
-1. Bạn mở website, bấm icon extension để mở **side panel** cho tab đó, rồi chọn **Gắn vào tab này**.
+1. Bạn mở website và bấm icon extension: side panel mở ra và tab đó **được gắn luôn**, không cần xác nhận thêm.
 2. Extension đọc cookie chứa access token (JWT) bằng `chrome.cookies`, kể cả cookie HttpOnly, và lấy trường `exp`.
 3. Hẹn giờ bằng `chrome.alarms` theo cách làm mới của website (xem bên dưới).
 4. Đến giờ, extension reload **tab đã gắn**, và website tự dùng refresh token để lấy token mới.
@@ -64,7 +64,7 @@ Badge **ON** hiện trên từng tab đã gắn.
 
 1. Mở `chrome://extensions`, bật **Developer mode**.
 2. Bấm **Load unpacked**, chọn thư mục gốc của repo này.
-3. Mở website và đăng nhập, bấm icon extension để mở side panel, chọn **Gắn vào tab này** và đồng ý cấp quyền.
+3. Mở website và đăng nhập, bấm icon extension. Side panel mở ra và tab được gắn ngay.
 4. Trong side panel bấm **Cài đặt** (mở ngay trong panel, không mở tab mới), nhập **tên cookie chứa access token của website đó** (xem trong DevTools → Application → Cookies), bấm **Lưu** rồi **Kiểm tra cookie**.
 5. Side panel hiển thị trạng thái: thời điểm token hết hạn, lần làm mới tiếp theo, lần làm mới gần nhất, và các website khác đang được giữ.
 6. Muốn giữ thêm website khác: mở website đó ở tab khác và làm lại bước 3–4.
@@ -107,7 +107,10 @@ Cách thử nhanh, không phải chờ 24 giờ: mở DevTools → Application �
 
 ## Bảo mật
 
-- Quyền truy cập website là `optional_host_permissions`: chỉ xin đúng domain của tab bạn gắn, không dùng `<all_urls>`.
+- Để gắn tab không phải hỏi quyền mỗi lần, extension xin sẵn `host_permissions` cho mọi trang https khi cài.
+  Nếu chỉ dùng cho một số website cố định của công ty, nên thu hẹp danh sách này trong `manifest.json`,
+  ví dụ `"https://*.congty.vn/*"`, để bộ phận bảo mật dễ duyệt hơn.
+- Extension chỉ đọc cookie và reload tab của những tab bạn đã gắn; các trang khác không bị đụng tới.
 - **Không lưu giá trị token** vào storage, không gửi token đi đâu; chỉ lưu các mốc thời gian.
 - Script kiểm tra trang chỉ trả về pathname, không trả query string.
 

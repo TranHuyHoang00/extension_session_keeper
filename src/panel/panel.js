@@ -60,12 +60,12 @@ async function render() {
   } else if (boundElsewhere) {
     $("bindText").textContent = `${host} đang được giữ ở tab #${boundElsewhere.tabId}. Mỗi website chỉ giữ ở một tab.`;
   } else if (tabOrigin) {
-    $("bindText").textContent = `Gắn tab này để giữ phiên đăng nhập cho ${host}.`;
+    $("bindText").textContent = `Tab này đã bỏ gắn, ${host} đang không được giữ phiên.`;
   } else {
     $("bindText").textContent = "Trang này không phải https nên không gắn được. Hãy mở website cần giữ phiên.";
   }
   show($("bind"), !binding && !!tabOrigin);
-  $("bind").textContent = boundElsewhere ? "Chuyển sang tab này" : "Gắn vào tab này";
+  $("bind").textContent = boundElsewhere ? "Chuyển sang tab này" : "Gắn lại tab này";
   show($("unbind"), !!binding);
   show($("goto"), !binding && !!boundElsewhere);
 
@@ -105,17 +105,9 @@ async function act(type) {
   }
 }
 
+// Tab được gắn tự động khi bấm icon extension; nút này chỉ để gắn lại sau khi đã bỏ gắn.
 $("bind").addEventListener("click", () => {
-  const origin = info?.tabOrigin;
-  if (!origin) return;
-  // permissions.request phải gọi ngay trong lần bấm của người dùng.
-  chrome.permissions.request({ origins: [origin + "/*"] }, (granted) => {
-    if (!granted) {
-      $("message").textContent = "Bạn chưa cấp quyền cho website này nên không thể gắn.";
-      return;
-    }
-    act("bind");
-  });
+  if (info?.tabOrigin) act("bind");
 });
 $("unbind").addEventListener("click", () => act("unbind"));
 $("goto").addEventListener("click", async () => {
@@ -195,7 +187,7 @@ $("checkCookie").addEventListener("click", async () => {
   if (!origin) return showSettingsResult("Trang này không phải https.", "error");
   if (!name) return showSettingsResult("Nhập tên cookie trước.", "error");
   if (!(await chrome.permissions.contains({ origins: [origin + "/*"] }))) {
-    return showSettingsResult('Chưa có quyền với website này. Quay lại và bấm "Gắn vào tab này" trước.', "error");
+    return showSettingsResult("Extension chưa có quyền với website này. Hãy reload extension trong chrome://extensions.", "error");
   }
   const cookie = await chrome.cookies.get({ url: origin, name });
   if (!cookie) return showSettingsResult(`Không tìm thấy cookie "${name}" trên ${hostOf(origin)}. Bạn đã đăng nhập chưa?`, "error");

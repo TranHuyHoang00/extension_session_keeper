@@ -370,3 +370,31 @@ test("cookie bị xoá khi token CÒN hạn → báo chưa đăng nhập", async
   await bg.onTokenCookieChanged(TAB_A);
   assert.equal(st(TAB_A).status, "logged_out");
 });
+
+// ---------------------------------------------------------------------------
+// Bấm icon = gắn luôn
+
+test("bấm icon trên website chưa gắn → mở panel và gắn ngay", async () => {
+  const C = "https://c.site.io";
+  db.tabs.push({ id: 9, url: C + "/", active: true, windowId: 1 });
+  setToken(C, "privateToken", nowSec() + 3600);
+  await bg.openPanelForTab({ id: 9 });
+  assert.deepEqual(db.panelOpened, [9]);
+  assert.deepEqual(db.local.bindings[9], { tabId: 9, origin: C });
+  assert.equal(st(9).status, "scheduled");
+});
+
+test("bấm icon lại trên tab đã gắn → không đặt lại trạng thái", async () => {
+  setToken(A, "privateToken", nowSec() + 3600);
+  db.local.states[TAB_A] = { status: "scheduled", failCount: 2, lastSuccessAt: 123 };
+  await bg.openPanelForTab({ id: TAB_A });
+  assert.equal(st(TAB_A).failCount, 2);
+  assert.equal(st(TAB_A).lastSuccessAt, 123);
+});
+
+test("bấm icon trên trang không phải https → chỉ mở panel, không gắn", async () => {
+  db.tabs.push({ id: 9, url: "chrome://extensions/", active: true, windowId: 1 });
+  await bg.openPanelForTab({ id: 9 });
+  assert.deepEqual(db.panelOpened, [9]);
+  assert.equal(db.local.bindings[9], undefined);
+});

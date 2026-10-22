@@ -526,6 +526,7 @@ async function disablePanelGlobally() {
   await chrome.sidePanel.setOptions({ enabled: false });
 }
 
+// Bấm icon extension trên website = đồng ý giữ phiên cho tab đó: mở panel và gắn luôn.
 // Không dùng await trước sidePanel.open: Chrome chỉ cho mở panel ngay trong lần bấm của người dùng.
 function openPanelForTab(tab) {
   if (!tab?.id) return;
@@ -534,6 +535,16 @@ function openPanelForTab(tab) {
     console.warn("[SessionKeeper] open side panel failed", err);
     log("error", `Không mở được side panel: ${err?.message || err}`, { tabId: tab.id });
   });
+  return serial(() => autoBind(tab.id));
+}
+
+async function autoBind(tabId) {
+  const tab = await getTab(tabId);
+  const origin = tab ? normalizeOrigin(tab.pendingUrl || tab.url || "") : null;
+  if (!origin) return null; // trang không phải https: panel sẽ giải thích
+  const current = await getBinding(tabId);
+  if (current?.origin === origin) return getState(tabId); // đã gắn rồi: không đặt lại
+  return bindTab(tabId);
 }
 
 // ---------------------------------------------------------------------------

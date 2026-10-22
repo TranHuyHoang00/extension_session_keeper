@@ -13,7 +13,6 @@
     "scripting",
     "sidePanel"
   ],
-  "optional_host_permissions": ["https://*/*", "http://localhost/*"],
   "background": {
     "service_worker": "src/background.js",
     "type": "module"
@@ -35,5 +34,9 @@
   },
   "side_panel": {
     "default_path": "src/panel/panel.html"
-  }
+  },
+  "host_permissions": [
+    "https://*/*",
+    "http://localhost/*"
+  ]
 }
