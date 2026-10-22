@@ -208,3 +208,45 @@ test("side panel: tắt mặc định cho mọi tab, chỉ bật cho tab đượ
   // Không có tab nào khác được bật panel
   assert.ok(db.panelOptions.every((o) => o.tabId === undefined || o.tabId === 3));
 });
+
+test("log: ghi lại sự kiện làm mới thành công, không chứa token", async () => {
+  const { getLogs } = await import("../src/log.js");
+  db.local.logs = [];
+  const token = makeJwt({ exp: nowSec() + 60 });
+  db.cookies.access_token = token;
+  await bg.schedule();
+  await bg.startRefresh({ manual: true });
+  const newToken = makeJwt({ exp: nowSec() + 86400 });
+  db.cookies.access_token = newToken;
+  await bg.onTokenCookieChanged();
+
+  const logs = await getLogs();
+  const text = logs.map((l) => `${l.level} ${l.msg}`).join("\n");
+  assert.match(text, /info Reload tab #2/);
+  assert.match(text, /success Đã có token mới/);
+  assert.match(text, /Hẹn làm mới lúc/);
+  for (const t of [token, newToken]) assert.ok(!text.includes(t.split(".")[1]));
+});
+
+test("log: ghi lỗi/cảnh báo khi gặp CAPTCHA, không ghi trùng", async () => {
+  const { getLogs } = await import("../src/log.js");
+  db.local.logs = [];
+  db.cookies.access_token = makeJwt({ exp: nowSec() + 60 });
+  await bg.startRefresh();
+  db.pageState = { captcha: true, login: false, path: "/" };
+  await bg.verifyRefresh();
+  await bg.schedule(); // gọi lại không tạo dòng trùng
+  const logs = await getLogs();
+  assert.ok(logs.some((l) => l.level === "warn" && /CAPTCHA/.test(l.msg)));
+  const captchaLines = logs.filter((l) => /yêu cầu xác minh/.test(l.msg));
+  assert.equal(captchaLines.length, 1);
+});
+
+test("log: giới hạn số dòng lưu trữ", async () => {
+  const { log, getLogs, MAX_LOGS } = await import("../src/log.js");
+  db.local.logs = [];
+  await Promise.all(Array.from({ length: MAX_LOGS + 25 }, (_, i) => log("info", `dòng ${i}`)));
+  const logs = await getLogs();
+  assert.equal(logs.length, MAX_LOGS);
+  assert.equal(logs.at(-1).msg, `dòng ${MAX_LOGS + 24}`);
+});

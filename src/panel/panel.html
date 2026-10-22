@@ -41,6 +41,21 @@
         <button id="reset" class="secondary">Đặt lại</button>
         <button id="openSettings" class="link">Cài đặt</button>
       </div>
+
+      <!-- Lịch sử dạng terminal -->
+      <section class="terminal-wrap">
+        <div class="terminal-bar">
+          <span class="terminal-title">Lịch sử</span>
+          <select id="logFilter" title="Lọc mức độ">
+            <option value="all">Tất cả</option>
+            <option value="problems">Lỗi &amp; cảnh báo</option>
+            <option value="debug">Chi tiết (debug)</option>
+          </select>
+          <button id="copyLogs" class="tiny secondary" title="Sao chép toàn bộ log">Sao chép</button>
+          <button id="clearLogs" class="tiny secondary" title="Xoá lịch sử">Xoá</button>
+        </div>
+        <pre id="terminal" class="terminal" aria-live="polite"></pre>
+      </section>
     </main>
 
     <!-- Cài đặt (cùng panel, không mở tab mới) -->

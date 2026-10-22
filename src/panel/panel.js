@@ -1,5 +1,6 @@
 import { normalizeOrigin, getConfig, saveConfig } from "../config.js";
 import { getExp } from "../jwt.js";
+import { LOG_KEY, getLogs, clearLogs, formatTime, formatLine, logError } from "../log.js";
 
 const STATUS_LABEL = {
   unbound: "Chưa gắn tab",
@@ -78,6 +79,7 @@ async function act(type, extra) {
     await send(type, extra);
   } catch (err) {
     $("message").textContent = err.message || String(err);
+    logError(err.message || String(err));
     return render().then(() => ($("message").textContent = err.message || String(err)));
   }
   await render();
@@ -174,4 +176,89 @@ tick();
 setInterval(tick, 5000);
 chrome.tabs.onUpdated.addListener((tabId, info) => {
   if (tabId === PANEL_TAB_ID && info.status === "complete") tick();
+});
+
+// ---------------------------------------------------------------------------
+// Terminal lịch sử
+
+const FILTERS = {
+  all: (e) => e.level !== "debug",
+  problems: (e) => e.level === "warn" || e.level === "error",
+  debug: () => true,
+};
+let logFilter = "all";
+try {
+  logFilter = localStorage.getItem("sk-log-filter") || "all";
+} catch {
+  /* bỏ qua */
+}
+$("logFilter").value = FILTERS[logFilter] ? logFilter : "all";
+
+function renderLogs(logs) {
+  const term = $("terminal");
+  const nearBottom = term.scrollHeight - term.scrollTop - term.clientHeight < 40;
+  const shown = logs.filter(FILTERS[$("logFilter").value] || FILTERS.all);
+
+  term.replaceChildren();
+  if (!shown.length) {
+    const empty = document.createElement("span");
+    empty.className = "log-empty";
+    empty.textContent = "$ chưa có sự kiện nào";
+    term.append(empty);
+    return;
+  }
+  for (const e of shown) {
+    const line = document.createElement("div");
+    line.className = `log-line log-${e.level}`;
+    const time = document.createElement("span");
+    time.className = "log-time";
+    time.textContent = formatTime(e.t);
+    const level = document.createElement("span");
+    level.className = "log-level";
+    level.textContent = e.level.toUpperCase();
+    const msg = document.createElement("span");
+    msg.className = "log-msg";
+    msg.textContent = e.msg;
+    line.append(time, level, msg);
+    term.append(line);
+  }
+  if (nearBottom) term.scrollTop = term.scrollHeight;
+}
+
+async function refreshLogs() {
+  renderLogs(await getLogs());
+}
+
+$("logFilter").addEventListener("change", () => {
+  try {
+    localStorage.setItem("sk-log-filter", $("logFilter").value);
+  } catch {
+    /* bỏ qua */
+  }
+  refreshLogs();
+});
+
+$("copyLogs").addEventListener("click", async () => {
+  const logs = (await getLogs()).filter(FILTERS[$("logFilter").value] || FILTERS.all);
+  try {
+    await navigator.clipboard.writeText(logs.map(formatLine).join("\n"));
+    $("copyLogs").textContent = "Đã chép";
+  } catch {
+    $("copyLogs").textContent = "Lỗi chép";
+  }
+  setTimeout(() => ($("copyLogs").textContent = "Sao chép"), 1500);
+});
+
+$("clearLogs").addEventListener("click", async () => {
+  await clearLogs();
+  await refreshLogs();
+});
+
+// Cập nhật ngay khi background ghi log mới.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes[LOG_KEY]) renderLogs(changes[LOG_KEY].newValue || []);
+});
+
+refreshLogs().then(() => {
+  $("terminal").scrollTop = $("terminal").scrollHeight;
 });

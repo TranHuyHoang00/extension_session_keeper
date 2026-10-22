@@ -19,6 +19,7 @@ import {
 } from "./config.js";
 import { getExp } from "./jwt.js";
 import { detectPageState } from "./detect.js";
+import { log, logInfo, logSuccess, logWarn, logError, logDebug, formatTime } from "./log.js";
 
 const ALARM_REFRESH = "sk-refresh";
 const ALARM_VERIFY = "sk-verify";
@@ -30,7 +31,10 @@ const MANUAL_GUARD_MS = 30_000;    // chống bấm "Làm mới ngay" liên tụ
 let chain = Promise.resolve();
 function serial(fn) {
   const run = chain.then(fn, fn);
-  chain = run.catch((err) => console.error("[SessionKeeper]", err));
+  chain = run.catch((err) => {
+    console.error("[SessionKeeper]", err);
+    logError(`Lỗi không mong muốn: ${err?.message || err}`);
+  });
   return run;
 }
 
@@ -86,9 +90,21 @@ async function updateBadge(status, tabId) {
   }
 }
 
+const STATUS_LEVEL = {
+  ok: "success",
+  logged_out: "warn",
+  needs_attention: "warn",
+  stopped: "error",
+  error: "error",
+};
+
 async function setStatus(status, message, extra = {}) {
   const prev = await getState();
   const next = await setState({ status, message, ...extra });
+  // Ghi log mỗi khi trạng thái hoặc thông điệp thay đổi (không ghi trùng).
+  if (message && (prev.status !== status || prev.message !== message)) {
+    await log(STATUS_LEVEL[status] || "info", message);
+  }
   const cfg = await getConfig();
   await updateBadge(status, cfg.boundTabId);
   // Chỉ thông báo khi chuyển sang trạng thái cần người dùng xử lý.
@@ -110,6 +126,7 @@ async function notify(message) {
     });
   } catch (err) {
     console.warn("[SessionKeeper] notify failed", err);
+    await logWarn(`Không hiện được thông báo hệ thống: ${err?.message || err}`);
   }
 }
 
@@ -128,11 +145,13 @@ async function bindTab(tabId) {
     await chrome.action.setBadgeText({ tabId: cfg.boundTabId, text: "" }).catch(() => {});
   }
   await setBinding({ tabId, origin });
+  await logInfo(`Đã gắn tab #${tabId} (${origin}).`);
   return resetAll();
 }
 
 async function unbind(reason, { alert = false } = {}) {
   const cfg = await getConfig();
+  await log(alert ? "warn" : "info", reason);
   await chrome.alarms.clear(ALARM_REFRESH);
   await chrome.alarms.clear(ALARM_VERIFY);
   if (cfg.boundTabId != null) {
@@ -198,6 +217,11 @@ async function schedule() {
   );
   const when = Math.max(target, earliest);
   await chrome.alarms.create(ALARM_REFRESH, { when });
+  if (state.nextRefreshAt !== when || state.exp !== exp) {
+    await logInfo(
+      `Token hết hạn lúc ${formatTime(exp * 1000)}. Hẹn làm mới lúc ${formatTime(when)}.`
+    );
+  }
 
   // Giữ nguyên trạng thái "cần xử lý" nếu đang có, chỉ cập nhật lịch.
   const status = state.status === "needs_attention" ? "needs_attention" : "scheduled";
@@ -214,17 +238,23 @@ async function startRefresh({ manual = false } = {}) {
   const now = Date.now();
 
   if (cfg.boundTabId == null || !cfg.enabled) return schedule();
-  if (state.status === "stopped" && !manual) return state;
+  await logDebug(manual ? "Người dùng bấm \"Làm mới ngay\"." : "Đến giờ làm mới token.");
+  if (state.status === "stopped" && !manual) {
+    await logDebug("Đang ở trạng thái dừng, bỏ qua.");
+    return state;
+  }
   if (
     state.status === "refreshing" &&
     state.lastAttemptAt &&
     now - state.lastAttemptAt < cfg.verifyDelaySec * 2000
   ) {
+    await logDebug("Đang có một lần làm mới chưa xong, bỏ qua.");
     return state; // đang có một lần refresh chưa xong
   }
   const gap = manual ? MANUAL_GUARD_MS : cfg.minRetryGapSec * 1000;
   if (state.lastAttemptAt && now - state.lastAttemptAt < gap) {
     // Quá sớm so với lần thử trước: lùi lịch lại thay vì reload liên tục.
+    await logWarn(`Lần thử trước còn quá gần, lùi đến ${formatTime(state.lastAttemptAt + gap)}.`);
     await chrome.alarms.create(ALARM_REFRESH, { when: state.lastAttemptAt + gap });
     return setState({ nextRefreshAt: state.lastAttemptAt + gap });
   }
@@ -252,6 +282,7 @@ async function startRefresh({ manual = false } = {}) {
     /* Chrome cũ không hỗ trợ */
   }
   await chrome.tabs.reload(tab.id);
+  await logInfo(`Reload tab #${tab.id} để website tự làm mới token.`);
 
   await setStatus("refreshing", "Đang để website tự làm mới token…", {
     lastAttemptAt: now,
@@ -275,6 +306,7 @@ async function onTokenCookieChanged() {
 
   const baseline = state.status === "refreshing" ? state.attemptExp : state.exp;
   if (exp > (baseline || 0)) {
+    await logSuccess(`Đã có token mới, hết hạn lúc ${formatTime(exp * 1000)}.`);
     await chrome.alarms.clear(ALARM_VERIFY);
     await setState({
       status: "ok",
@@ -299,6 +331,7 @@ async function inspectTab(tabId) {
     return res?.result || null;
   } catch (err) {
     console.warn("[SessionKeeper] inspect failed", err);
+    await logWarn(`Không kiểm tra được nội dung tab: ${err?.message || err}`);
     return null;
   }
 }
@@ -318,6 +351,10 @@ async function verifyRefresh() {
 
   const page = await inspectTab(cfg.boundTabId);
   const failCount = state.failCount + 1;
+  await logWarn(
+    `Sau ${cfg.verifyDelaySec}s token vẫn chưa đổi (lần ${failCount}/${cfg.maxFailures}).` +
+      (page ? ` Trang: ${page.path}${page.captcha ? ", có CAPTCHA" : ""}${page.login ? ", trang đăng nhập" : ""}.` : "")
+  );
   const common = { failCount, attemptExp: null };
 
   if (page?.captcha || page?.login) {
@@ -359,6 +396,7 @@ async function resetAll() {
 
 // Khi trình duyệt khởi động lại, mọi tabId cũ đều mất hiệu lực.
 async function onBrowserStartup() {
+  await logInfo("Trình duyệt khởi động.");
   const cfg = await getConfig();
   if (cfg.boundTabId == null) return schedule();
   return unbind("Trình duyệt vừa khởi động lại. Hãy mở website và gắn lại tab.", { alert: true });
@@ -385,9 +423,10 @@ async function disablePanelGlobally() {
 function openPanelForTab(tab) {
   if (!tab?.id) return;
   chrome.sidePanel.setOptions({ tabId: tab.id, path: panelPathFor(tab.id), enabled: true });
-  chrome.sidePanel.open({ tabId: tab.id }).catch((err) =>
-    console.warn("[SessionKeeper] open side panel failed", err)
-  );
+  chrome.sidePanel.open({ tabId: tab.id }).catch((err) => {
+    console.warn("[SessionKeeper] open side panel failed", err);
+    logError(`Không mở được side panel: ${err?.message || err}`);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -395,7 +434,13 @@ function openPanelForTab(tab) {
 
 chrome.action.onClicked.addListener(openPanelForTab);
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(({ reason, previousVersion }) => {
+  const version = chrome.runtime.getManifest?.().version || "";
+  logInfo(
+    reason === "update"
+      ? `Đã cập nhật extension ${previousVersion} → ${version}.`
+      : `Extension được cài đặt/tải lại (${reason}) ${version}.`
+  );
   serial(disablePanelGlobally);
   serial(schedule);
 });
@@ -417,6 +462,7 @@ chrome.cookies.onChanged.addListener(({ cookie, removed, cause }) => {
     if (!cookieDomainMatches(cookie.domain, new URL(cfg.siteUrl).hostname)) return;
     // Khi cookie bị ghi đè, Chrome báo "removed" (overwrite) rồi mới báo giá trị mới.
     if (removed && cause === "overwrite") return;
+    await logDebug(removed ? `Cookie token bị xoá (${cause}).` : "Cookie token vừa được ghi mới.");
     return onTokenCookieChanged();
   });
 });
@@ -454,7 +500,10 @@ chrome.notifications.onClicked.addListener(() => {
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "sync" && changes.config) serial(resetAll);
+  if (area === "sync" && changes.config) {
+    logInfo("Đã lưu cài đặt mới, khởi động lại theo dõi.");
+    serial(resetAll);
+  }
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -463,7 +512,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     bind: () => bindTab(msg.tabId),
     unbind: () => unbind("Đã bỏ gắn tab."),
     refreshNow: () => startRefresh({ manual: true }),
-    reset: resetAll,
+    reset: async () => {
+      await logInfo("Người dùng bấm \"Đặt lại\".");
+      return resetAll();
+    },
   };
   const handler = handlers[msg?.type];
   if (!handler) return false;
@@ -472,6 +524,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     .catch((err) => sendResponse({ ok: false, error: err?.message || String(err) }));
   return true; // trả lời bất đồng bộ
 });
+
+// Bắt lỗi chưa xử lý trong service worker để hiện trong lịch sử.
+if (typeof self !== "undefined" && self.addEventListener) {
+  self.addEventListener("error", (e) => logError(`Lỗi: ${e?.message || e}`));
+  self.addEventListener("unhandledrejection", (e) =>
+    logError(`Lỗi chưa xử lý: ${e?.reason?.message || e?.reason || e}`)
+  );
+}
 
 // Cho phép test đơn vị gọi trực tiếp các hàm này.
 export const __test__ = {

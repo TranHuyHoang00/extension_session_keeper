@@ -44,6 +44,22 @@ Badge **ON** chỉ hiện trên tab đã gắn.
 4. Trong side panel bấm **Cài đặt** (mở ngay trong panel, không mở tab mới), nhập **tên cookie chứa access token** (xem trong DevTools → Application → Cookies), bấm **Lưu** rồi **Kiểm tra cookie**.
 5. Side panel hiển thị trạng thái: thời điểm token hết hạn, lần làm mới tiếp theo, lần làm mới gần nhất.
 
+## Lịch sử (terminal)
+
+Phía dưới side panel có khung **Lịch sử** dạng terminal, cập nhật ngay khi có sự kiện:
+
+| Mức | Ví dụ |
+|---|---|
+| `INFO` | Gắn/bỏ gắn tab, hẹn giờ làm mới, reload tab, lưu cài đặt, cập nhật extension |
+| `SUCCESS` | Đã có token mới và giờ hết hạn mới |
+| `WARN` | Token chưa đổi sau khi reload, gặp CAPTCHA, trang đăng nhập, tab chuyển sang trang khác |
+| `ERROR` | Dừng sau nhiều lần thất bại, lỗi không mong muốn, không mở được panel |
+| `DEBUG` | Chi tiết: alarm chạy, cookie thay đổi, các lần bỏ qua |
+
+- Bộ lọc: **Tất cả** (ẩn debug), **Lỗi & cảnh báo**, **Chi tiết (debug)**.
+- **Sao chép** để gửi log khi báo lỗi, **Xoá** để làm sạch.
+- Lưu tối đa 300 dòng gần nhất trong `chrome.storage.local`. Log **không bao giờ chứa giá trị token**.
+
 ## Điều kiện để giải pháp hoạt động
 
 Cần kiểm tra tay trước: **khi reload trang lúc token sắp hoặc vừa hết hạn, website có tự refresh token không?**
@@ -75,8 +91,9 @@ src/
   background.js      service worker: gắn tab, lên lịch, reload, xác minh, thông báo
   config.js          cấu hình, tab đang gắn và trạng thái (chrome.storage)
   jwt.js             đọc exp từ JWT
+  log.js             ghi và định dạng lịch sử sự kiện
   detect.js          inject vào trang để phát hiện CAPTCHA / trang đăng nhập
-  panel/             side panel theo từng tab (gắn / bỏ gắn tab, trạng thái, cài đặt)
+  panel/             side panel theo từng tab (gắn / bỏ gắn tab, trạng thái, cài đặt, lịch sử)
   ui.css
 icons/
 test/                test logic background với chrome giả lập (Node)

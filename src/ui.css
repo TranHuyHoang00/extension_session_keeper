@@ -27,7 +27,11 @@
 body { margin: 0; background: var(--bg); }
 h1 { font-size: 16px; margin: 0; }
 
-.panel { padding: 14px; min-width: 260px; }
+.panel {
+  padding: 14px; min-width: 260px; box-sizing: border-box;
+  min-height: 100vh; display: flex; flex-direction: column;
+}
+#mainView { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .panel header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .pill {
   font-size: 12px; padding: 2px 10px; border-radius: 999px;
@@ -74,3 +78,36 @@ button:disabled { opacity: 0.5; cursor: default; }
 .bind p { margin: 0 0 8px; }
 h2 { font-size: 15px; margin: 12px 0 4px; }
 .hint { font-size: 12px; }
+
+/* Terminal lịch sử: luôn nền tối cho giống terminal */
+.terminal-wrap {
+  margin-top: 14px; display: flex; flex-direction: column; flex: 1; min-height: 220px;
+  border: 1px solid #30363d; border-radius: 8px; overflow: hidden;
+}
+.terminal-bar {
+  display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+  background: #161b22; color: #c9d1d9; border-bottom: 1px solid #30363d;
+}
+.terminal-title { font-weight: 600; flex: 1; font-size: 12px; }
+.terminal-bar select {
+  font: inherit; font-size: 12px; background: #0d1117; color: #c9d1d9;
+  border: 1px solid #30363d; border-radius: 4px; padding: 2px 4px;
+}
+button.tiny { font-size: 12px; padding: 2px 8px; }
+.terminal-bar button.secondary { color: #c9d1d9; border-color: #30363d; }
+.terminal {
+  margin: 0; flex: 1; min-height: 180px; max-height: 60vh; overflow: auto;
+  padding: 8px 10px; background: #0d1117; color: #c9d1d9;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap; word-break: break-word;
+}
+.log-line { display: flex; gap: 8px; }
+.log-time { color: #6e7681; flex: none; }
+.log-level { flex: none; width: 58px; font-weight: 600; }
+.log-msg { flex: 1; }
+.log-info .log-level { color: #58a6ff; }
+.log-success .log-level { color: #3fb950; }
+.log-warn .log-level { color: #d29922; }
+.log-error .log-level, .log-error .log-msg { color: #f85149; }
+.log-debug .log-level, .log-debug .log-msg { color: #8b949e; }
+.log-empty { color: #6e7681; }
