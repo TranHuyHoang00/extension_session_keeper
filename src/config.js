@@ -57,6 +57,9 @@ export const DEFAULT_STATE = {
   lastSuccessAt: null, // ms
   failCount: 0,
   attemptExp: null, // exp trước khi thử refresh
+  relayAt: null, // ms, lần gửi token lên server gần nhất
+  relayOk: null, // true/false: kết quả lần gửi gần nhất
+  relayInfo: "", // mô tả ngắn kết quả lần gửi gần nhất
 };
 
 const key = (tabId) => String(tabId);

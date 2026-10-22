@@ -74,15 +74,24 @@ async function render() {
   if (binding) {
     $("cookieName").textContent = settings.tokenCookie;
     $("timingText").textContent = describeTiming(settings);
-    $("relayText").textContent = relayEnabled(settings)
-      ? `Bật → ${hostOf(settings.relayUrl)}`
-      : "Tắt";
+    if (relayEnabled(settings)) {
+      let txt = `Bật → ${hostOf(settings.relayUrl)}`;
+      if (state.relayAt) {
+        txt += ` · ${state.relayOk ? "✓" : "✗"} ${state.relayInfo || ""} (${fmt(state.relayAt)})`;
+      } else {
+        txt += " · chưa gửi lần nào";
+      }
+      $("relayText").textContent = txt;
+    } else {
+      $("relayText").textContent = "Tắt";
+    }
     $("exp").textContent = state.exp ? fmt(state.exp * 1000) : "–";
     $("next").textContent = fmt(state.nextRefreshAt);
     $("last").textContent = fmt(state.lastSuccessAt);
     $("fails").textContent = String(state.failCount);
   }
   show($("refresh"), !!binding);
+  show($("relayNow"), !!binding && relayEnabled(settings));
   show($("reset"), !!binding);
   $("refresh").disabled = !binding || !settings.enabled || state.status === "refreshing";
   show($("openSettings"), !!settingsOrigin);
@@ -120,6 +129,7 @@ $("goto").addEventListener("click", async () => {
   await chrome.windows.update(tab.windowId, { focused: true });
 });
 $("refresh").addEventListener("click", () => act("refreshNow"));
+$("relayNow").addEventListener("click", () => act("relayNow"));
 $("reset").addEventListener("click", () => act("reset"));
 
 // ---------------------------------------------------------------------------

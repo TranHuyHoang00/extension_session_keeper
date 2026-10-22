@@ -134,6 +134,10 @@ Content-Type: application/json
 
 Dự án bên kia gọi `GET` lên server đó (kèm cùng khóa) để lấy token mới nhất.
 
+**Xem đã gửi được chưa:** side panel hiện dòng **Đẩy token** với kết quả và giờ gửi gần nhất
+(ví dụ `Bật → host · ✓ đã gửi tới host (14:31:14)`), và khung Lịch sử ghi mỗi lần gửi.
+Extension chỉ tự gửi khi có **token mới**; để kiểm tra ngay, bấm nút **Gửi token lên server ngay**.
+
 **Cảnh báo:** bật tính năng này nghĩa là extension **gửi giá trị token production ra ngoài trình duyệt**.
 Chỉ dùng với server bạn kiểm soát, luôn đặt khóa bí mật, dùng HTTPS, và **nên hỏi bộ phận bảo mật trước**.
 Nếu mục tiêu là để một máy tự động gọi API, giải pháp chuẩn hơn là xin **tài khoản dịch vụ (client credentials)**.

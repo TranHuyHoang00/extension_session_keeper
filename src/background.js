@@ -77,24 +77,33 @@ async function readTokenExp(cfg) {
 
 // (Tuỳ chọn, mặc định tắt) Đẩy token mới lên server cục bộ để máy/dự án khác lấy.
 // Chỉ gửi khi website có cấu hình relayUrl. Luôn kèm khóa bí mật. Không ghi token ra log.
-async function relayToken(tabId, cfg, exp) {
-  if (!relayEnabled(cfg)) return;
+async function relayToken(tabId, cfg, exp, { manual = false } = {}) {
+  if (!relayEnabled(cfg)) {
+    if (manual) throw new Error("Website này chưa bật đẩy token (Cài đặt → Nâng cao).");
+    return;
+  }
+  const record = (ok, info, level, msg) =>
+    Promise.all([setState(tabId, { relayAt: Date.now(), relayOk: ok, relayInfo: info }), tlog(tabId, level, msg)]);
+
   const cookie = await chrome.cookies.get({ url: cfg.siteUrl, name: cfg.tokenCookie });
-  if (!cookie) return;
-  const host = hostOf(cfg.siteUrl);
+  if (!cookie) {
+    await record(false, "chưa có token để gửi", "warn", "Chưa có token để đẩy lên server.");
+    return;
+  }
+  const target = hostOf(cfg.relayUrl);
   try {
     const res = await fetch(cfg.relayUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Session-Keeper-Key": cfg.relayKey || "" },
-      body: JSON.stringify({ site: host, cookie: cfg.tokenCookie, token: cookie.value, exp }),
+      body: JSON.stringify({ site: hostOf(cfg.siteUrl), cookie: cfg.tokenCookie, token: cookie.value, exp }),
     });
     if (res.ok) {
-      await tlog(tabId, "info", `Đã đẩy token mới lên ${hostOf(cfg.relayUrl)}.`);
+      await record(true, `đã gửi tới ${target}`, "info", `Đã đẩy token lên ${target}.`);
     } else {
-      await tlog(tabId, "warn", `Đẩy token thất bại: server trả ${res.status}.`);
+      await record(false, `server trả ${res.status}`, "warn", `Đẩy token thất bại: server trả ${res.status}.`);
     }
   } catch (err) {
-    await tlog(tabId, "warn", `Không gửi được token lên server: ${err?.message || err}`);
+    await record(false, `không gửi được: ${err?.message || err}`, "warn", `Không gửi được token lên server: ${err?.message || err}`);
   }
 }
 
@@ -493,6 +502,16 @@ async function resetTab(tabId) {
   return schedule(tabId);
 }
 
+// Gửi token hiện tại lên server ngay (nút "Gửi token lên server ngay").
+async function relayNow(tabId) {
+  const cfg = await getConfig(tabId);
+  if (!cfg) throw new Error("Tab chưa gắn.");
+  const { exp } = await readTokenExp(cfg);
+  await tlog(tabId, "debug", 'Người dùng bấm "Gửi token lên server ngay".');
+  await relayToken(tabId, cfg, exp, { manual: true });
+  return getState(tabId);
+}
+
 // Khi trình duyệt khởi động lại, mọi tabId cũ đều mất hiệu lực.
 async function onBrowserStartup() {
   await log("info", "Trình duyệt khởi động.");
@@ -676,6 +695,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     bind: () => bindTab(tabId),
     unbind: () => unbind(tabId, "Đã bỏ gắn tab."),
     refreshNow: () => startRefresh(tabId, { manual: true }),
+    relayNow: () => relayNow(tabId),
     reset: async () => {
       await tlog(tabId, "info", 'Người dùng bấm "Đặt lại".');
       return resetTab(tabId);
