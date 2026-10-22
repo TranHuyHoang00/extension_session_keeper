@@ -27,8 +27,10 @@ const logsText = () => (db.local.logs || []).map((l) => `${l.level} [${l.site ||
 beforeEach(() => {
   db.sync = {
     sites: {
-      [A]: { tokenCookie: "privateToken", marginSec: 180, enabled: true },
-      [B]: { tokenCookie: "access_token", marginSec: 300, enabled: true },
+      // A: website chỉ refresh khi API báo lỗi → reload SAU khi hết hạn (mặc định)
+      [A]: { tokenCookie: "privateToken", timing: "after", afterSec: 10, enabled: true },
+      // B: website tự refresh khi tải trang → reload TRƯỚC khi hết hạn
+      [B]: { tokenCookie: "access_token", timing: "before", marginSec: 300, enabled: true },
     },
   };
   db.local = {
@@ -76,7 +78,7 @@ test("khớp domain cookie và tên alarm", () => {
 // ---------------------------------------------------------------------------
 // Nhiều website chạy độc lập
 
-test("hai website: mỗi tab lịch riêng theo đúng tên cookie và margin riêng", async () => {
+test("hai website: mỗi tab lịch riêng theo đúng tên cookie và cách làm mới riêng", async () => {
   const expA = nowSec() + 3600;
   const expB = nowSec() + 7200;
   setToken(A, "privateToken", expA);
@@ -87,8 +89,8 @@ test("hai website: mỗi tab lịch riêng theo đúng tên cookie và margin ri
   await bg.scheduleAll();
   assert.equal(st(TAB_A).status, "scheduled");
   assert.equal(st(TAB_B).status, "scheduled");
-  assert.equal(alarm("refresh", TAB_A), (expA - 180) * 1000);
-  assert.equal(alarm("refresh", TAB_B), (expB - 300) * 1000);
+  assert.equal(alarm("refresh", TAB_A), (expA + 10) * 1000); // sau khi hết hạn
+  assert.equal(alarm("refresh", TAB_B), (expB - 300) * 1000); // trước khi hết hạn
   assert.equal(db.tabBadges[TAB_A], "ON");
   assert.equal(db.tabBadges[TAB_B], "ON");
   assert.equal(db.tabBadges[1], undefined);
@@ -318,4 +320,53 @@ test("log giới hạn số dòng lưu trữ", async () => {
   const logs = await logMod.getLogs();
   assert.equal(logs.length, logMod.MAX_LOGS);
   assert.equal(logs.at(-1).msg, `dòng ${logMod.MAX_LOGS + 24}`);
+});
+
+// ---------------------------------------------------------------------------
+// Thời điểm làm mới
+
+test("thời điểm làm mới: mặc định SAU khi hết hạn", () => {
+  const site = cfgMod.DEFAULT_SITE;
+  assert.equal(site.timing, "after");
+  assert.equal(cfgMod.refreshTargetMs(1000, site), (1000 + site.afterSec) * 1000);
+  assert.equal(cfgMod.refreshTargetMs(1000, { ...site, timing: "before", marginSec: 60 }), 940_000);
+});
+
+test("website cũ chưa có timing → dùng kiểu sau khi hết hạn", async () => {
+  db.sync.sites[A] = { tokenCookie: "privateToken", marginSec: 180, enabled: true };
+  const exp = nowSec() + 600;
+  setToken(A, "privateToken", exp);
+  await bg.schedule(TAB_A);
+  assert.equal(alarm("refresh", TAB_A), (exp + 10) * 1000);
+});
+
+test("token hết hạn và cookie bị xoá (kiểu after) → vẫn reload, không coi là đăng xuất", async () => {
+  const exp = nowSec() + 60;
+  setToken(A, "privateToken", exp);
+  await bg.schedule(TAB_A);
+  // Trình duyệt xoá cookie đúng lúc token hết hạn
+  db.local.states[TAB_A].exp = nowSec() - 1;
+  delete db.cookies[A].privateToken;
+  await bg.onTokenCookieChanged(TAB_A);
+
+  assert.equal(st(TAB_A).status, "scheduled");
+  assert.match(st(TAB_A).message, /Token đã hết hạn/);
+  assert.ok(alarm("refresh", TAB_A) <= Date.now() + 31_000);
+  assert.equal(db.notifications.length, 0);
+
+  // Đến giờ: reload, website gọi API lỗi rồi tự refresh → có cookie mới
+  await bg.startRefresh(TAB_A);
+  assert.deepEqual(db.reloaded, [TAB_A]);
+  setToken(A, "privateToken", nowSec() + 86400);
+  await bg.onTokenCookieChanged(TAB_A);
+  assert.equal(st(TAB_A).status, "scheduled");
+  assert.ok(st(TAB_A).lastSuccessAt);
+});
+
+test("cookie bị xoá khi token CÒN hạn → báo chưa đăng nhập", async () => {
+  setToken(A, "privateToken", nowSec() + 3600);
+  await bg.schedule(TAB_A);
+  delete db.cookies[A].privateToken;
+  await bg.onTokenCookieChanged(TAB_A);
+  assert.equal(st(TAB_A).status, "logged_out");
 });

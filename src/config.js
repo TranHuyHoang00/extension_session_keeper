@@ -16,9 +16,28 @@ export const DEFAULTS = {
 // Cài đặt mặc định của một website.
 export const DEFAULT_SITE = {
   tokenCookie: "privateToken",
-  marginSec: 180, // refresh trước khi hết hạn bao nhiêu giây
+  // Khi nào reload tab:
+  //   "after"  : SAU khi token hết hạn. Dành cho website chỉ refresh khi gọi API bị lỗi 401
+  //              (token hết hạn → API lỗi → frontend mới dùng refresh token). Đây là kiểu phổ biến.
+  //   "before" : TRƯỚC khi token hết hạn. Dành cho website tự refresh chủ động lúc tải trang.
+  timing: "after",
+  afterSec: 10, // (after) chờ bao nhiêu giây sau khi token hết hạn rồi mới reload
+  marginSec: 180, // (before) reload trước khi hết hạn bao nhiêu giây
   enabled: true,
 };
+
+/** Thời điểm (ms) nên reload tab để website làm mới token. */
+export function refreshTargetMs(exp, site) {
+  return site.timing === "before"
+    ? (exp - site.marginSec) * 1000
+    : (exp + site.afterSec) * 1000;
+}
+
+export function describeTiming(site) {
+  return site.timing === "before"
+    ? `Trước khi hết hạn ${site.marginSec}s`
+    : `Sau khi hết hạn ${site.afterSec}s (khi API báo lỗi)`;
+}
 
 export const DEFAULT_STATE = {
   status: "unbound", // unbound | idle | scheduled | ok | refreshing | logged_out | needs_attention | stopped | error

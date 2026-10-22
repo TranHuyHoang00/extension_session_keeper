@@ -11,8 +11,8 @@ và extension không bao giờ tự mở tab mới.
 
 1. Bạn mở website, bấm icon extension để mở **side panel** cho tab đó, rồi chọn **Gắn vào tab này**.
 2. Extension đọc cookie chứa access token (JWT) bằng `chrome.cookies`, kể cả cookie HttpOnly, và lấy trường `exp`.
-3. Hẹn giờ bằng `chrome.alarms` để chạy trước `exp` một khoảng (mặc định 3 phút).
-4. Đến giờ, extension reload **tab đã gắn**. Frontend của website tải lại sẽ tự dùng refresh token để lấy token mới.
+3. Hẹn giờ bằng `chrome.alarms` theo cách làm mới của website (xem bên dưới).
+4. Đến giờ, extension reload **tab đã gắn**, và website tự dùng refresh token để lấy token mới.
 5. Theo dõi `chrome.cookies.onChanged`: thấy token mới có `exp` lớn hơn thì coi là thành công và hẹn lịch tiếp theo.
 6. Sau 60 giây mà token chưa đổi, extension kiểm tra tab:
    - Có CAPTCHA hoặc trang đăng nhập: **dừng tự động**, hiện thông báo; bấm vào thông báo để mở tab và tự xử lý.
@@ -24,6 +24,18 @@ gắn tab ──► cookie (exp) ──► alarm (exp − margin) ──► relo
                  ▲                                                               │
                  └──────────────── cookies.onChanged (token mới) ◄───────────────┘
 ```
+
+### Khi nào reload: sau hay trước khi token hết hạn
+
+Mỗi website chọn một trong hai cách trong phần Cài đặt:
+
+| Cách | Khi nào dùng | Extension làm gì |
+|---|---|---|
+| **Sau khi hết hạn** (mặc định) | Website chỉ refresh khi gọi API bị lỗi 401: token hết hạn → API lỗi → frontend mới dùng refresh token | Chờ token hết hạn thêm vài giây (mặc định 10s) rồi reload. Trang tải lại gọi API bằng token đã hết hạn, nhận lỗi và tự refresh |
+| **Trước khi hết hạn** | Website tự refresh lúc tải trang nếu token sắp hết hạn | Reload trước khi hết hạn một khoảng (mặc định 180s) |
+
+Với cách "sau khi hết hạn", nếu trình duyệt xoá cookie token đúng lúc nó hết hạn (cookie có `Expires` trùng `exp`),
+extension hiểu đó là token vừa hết hạn và vẫn reload, không coi là đã đăng xuất.
 
 ### Nhiều website
 
@@ -76,11 +88,13 @@ Phía dưới side panel có khung **Lịch sử** dạng terminal, cập nhật
 
 ## Điều kiện để giải pháp hoạt động
 
-Cần kiểm tra tay trước: **khi reload trang lúc token sắp hoặc vừa hết hạn, website có tự refresh token không?**
-Nếu frontend chỉ refresh khi gọi API bị 401, hoặc không refresh lúc tải trang, thì việc reload sẽ không tạo token mới.
+Cần kiểm tra tay trước: **khi token đã hết hạn, reload trang có làm website tự refresh token không?**
+Điều này cần trang gọi ít nhất một API dùng token ngay khi tải (ví dụ lấy thông tin người dùng),
+để nhận lỗi 401 và kích hoạt refresh.
 
-Cách thử nhanh: trong phần Cài đặt của side panel đặt "Làm mới trước khi hết hạn" lớn (ví dụ 3600 giây), rồi bấm **Làm mới ngay** trong side panel.
-Nếu giờ hết hạn trong side panel tăng lên thì giải pháp chạy được.
+Cách thử nhanh, không phải chờ 24 giờ: mở DevTools → Application → Cookies, xoá **chỉ** cookie access token
+(giữ cookie refresh token), rồi bấm **Làm mới ngay** trong side panel. Nếu khung Lịch sử hiện
+`SUCCESS Đã có token mới…` là giải pháp chạy được với website đó.
 
 ## Giới hạn (đúng thiết kế)
 

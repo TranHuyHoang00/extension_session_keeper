@@ -1,4 +1,4 @@
-import { getSiteSettings, saveSiteSettings, hostOf } from "../config.js";
+import { getSiteSettings, saveSiteSettings, hostOf, describeTiming } from "../config.js";
 import { getExp } from "../jwt.js";
 import { LOG_KEY, getLogs, clearLogs, formatTime, formatLine, log } from "../log.js";
 
@@ -73,6 +73,7 @@ async function render() {
   show($("facts"), !!binding);
   if (binding) {
     $("cookieName").textContent = settings.tokenCookie;
+    $("timingText").textContent = describeTiming(settings);
     $("exp").textContent = state.exp ? fmt(state.exp * 1000) : "–";
     $("next").textContent = fmt(state.nextRefreshAt);
     $("last").textContent = fmt(state.lastSuccessAt);
@@ -140,7 +141,10 @@ async function openSettings() {
   const s = await getSiteSettings(origin);
   $("settingsTitle").textContent = `Cài đặt cho ${hostOf(origin)}`;
   $("tokenCookie").value = s.tokenCookie;
+  $("timing").value = s.timing === "before" ? "before" : "after";
+  $("afterSec").value = s.afterSec;
   $("marginSec").value = s.marginSec;
+  updateTimingFields();
   $("enabled").checked = s.enabled;
   showSettingsResult("");
   show($("mainView"), false);
@@ -153,6 +157,21 @@ function closeSettings() {
   tick();
 }
 
+const TIMING_HINT = {
+  after:
+    "Chọn khi website chỉ dùng refresh token sau khi gọi API bị lỗi (401). Extension chờ token hết hạn rồi reload, trang gọi API, nhận lỗi và tự làm mới.",
+  before:
+    "Chọn khi website tự làm mới token lúc tải trang nếu token sắp hết hạn. Extension reload trước khi token hết hạn.",
+};
+
+function updateTimingFields() {
+  const t = $("timing").value;
+  show($("afterBox"), t === "after");
+  show($("beforeBox"), t === "before");
+  $("timingHint").textContent = TIMING_HINT[t];
+}
+$("timing").addEventListener("change", updateTimingFields);
+
 $("openSettings").addEventListener("click", openSettings);
 $("closeSettings").addEventListener("click", closeSettings);
 
@@ -162,6 +181,8 @@ $("settingsForm").addEventListener("submit", async (e) => {
   if (!origin) return;
   await saveSiteSettings(origin, {
     tokenCookie: $("tokenCookie").value.trim(),
+    timing: $("timing").value === "before" ? "before" : "after",
+    afterSec: Math.min(3600, Math.max(0, Number($("afterSec").value) || 0)),
     marginSec: Math.max(60, Number($("marginSec").value) || 180),
     enabled: $("enabled").checked,
   });

@@ -23,6 +23,7 @@ import {
   clearAllBindings,
   findBindingByOrigin,
   getSiteSettings,
+  refreshTargetMs,
   migrateLegacy,
   normalizeOrigin,
   hostOf,
@@ -227,8 +228,28 @@ async function schedule(tabId) {
   // Đang chờ kiểm tra kết quả một lần refresh: không lên lịch chồng.
   if (state.status === "refreshing") return state;
 
+  const now = Date.now();
+  const earliest = Math.max(
+    now + MIN_ALARM_DELAY_MS,
+    state.lastAttemptAt ? state.lastAttemptAt + cfg.minRetryGapSec * 1000 : 0
+  );
+
   const { found, exp } = await readTokenExp(cfg);
   if (!found) {
+    // Nhiều website đặt cookie hết hạn cùng lúc với token, nên đúng lúc token hết hạn
+    // trình duyệt sẽ xoá cookie. Với kiểu "sau khi hết hạn", đó chính là lúc cần reload
+    // để website gọi API, nhận lỗi và tự dùng refresh token, chứ không phải đã đăng xuất.
+    const tokenJustExpired =
+      cfg.timing !== "before" && state.exp && now >= state.exp * 1000 - 5000;
+    if (tokenJustExpired) {
+      await chrome.alarms.create(refreshAlarm, { when: earliest });
+      return setStatus(
+        tabId,
+        "scheduled",
+        `Token đã hết hạn (cookie đã bị xoá). Sẽ reload lúc ${formatTime(earliest)} để website tự làm mới.`,
+        { nextRefreshAt: earliest }
+      );
+    }
     await chrome.alarms.clear(refreshAlarm);
     return setStatus(
       tabId,
@@ -245,12 +266,7 @@ async function schedule(tabId) {
     });
   }
 
-  const now = Date.now();
-  const target = (exp - cfg.marginSec) * 1000;
-  const earliest = Math.max(
-    now + MIN_ALARM_DELAY_MS,
-    state.lastAttemptAt ? state.lastAttemptAt + cfg.minRetryGapSec * 1000 : 0
-  );
+  const target = refreshTargetMs(exp, cfg);
   const when = Math.max(target, earliest);
   await chrome.alarms.create(refreshAlarm, { when });
   if (state.nextRefreshAt !== when || state.exp !== exp) {

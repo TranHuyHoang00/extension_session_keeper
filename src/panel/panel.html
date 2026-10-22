@@ -27,6 +27,8 @@
       <dl class="facts" id="facts">
         <dt>Cookie token</dt>
         <dd id="cookieName">–</dd>
+        <dt>Cách làm mới</dt>
+        <dd id="timingText">–</dd>
         <dt>Token hết hạn</dt>
         <dd id="exp">–</dd>
         <dt>Làm mới lúc</dt>
@@ -76,8 +78,22 @@
         </label>
 
         <label>
+          Khi nào reload tab
+          <select id="timing">
+            <option value="after">Sau khi token hết hạn (website refresh khi API báo lỗi)</option>
+            <option value="before">Trước khi token hết hạn (website tự refresh khi tải trang)</option>
+          </select>
+          <small id="timingHint"></small>
+        </label>
+
+        <label id="afterBox">
+          Chờ sau khi hết hạn (giây)
+          <input id="afterSec" type="number" min="0" max="3600" step="5" />
+        </label>
+
+        <label id="beforeBox">
           Làm mới trước khi hết hạn (giây)
-          <input id="marginSec" type="number" min="60" max="86400" step="30" required />
+          <input id="marginSec" type="number" min="60" max="86400" step="30" />
         </label>
 
         <label class="row">
