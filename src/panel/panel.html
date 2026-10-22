@@ -7,6 +7,7 @@
   </head>
   <body class="panel">
     <header>
+      <span id="siteLabel" class="site-label">–</span>
       <span id="status" class="pill">…</span>
     </header>
 
@@ -17,15 +18,15 @@
         <div class="actions">
           <button id="bind">Gắn vào tab này</button>
           <button id="unbind" class="secondary">Bỏ gắn</button>
-          <button id="goto" class="secondary">Mở tab đã gắn</button>
+          <button id="goto" class="secondary">Mở tab đang giữ</button>
         </div>
       </section>
 
       <p id="message" class="message"></p>
 
       <dl class="facts" id="facts">
-        <dt>Website</dt>
-        <dd id="site">–</dd>
+        <dt>Cookie token</dt>
+        <dd id="cookieName">–</dd>
         <dt>Token hết hạn</dt>
         <dd id="exp">–</dd>
         <dt>Làm mới lúc</dt>
@@ -42,69 +43,58 @@
         <button id="openSettings" class="link">Cài đặt</button>
       </div>
 
+      <p id="boundList" class="hint"></p>
+
       <!-- Lịch sử dạng terminal -->
       <section class="terminal-wrap">
         <div class="terminal-bar">
           <span class="terminal-title">Lịch sử</span>
+          <select id="logScope" title="Phạm vi">
+            <option value="site">Web này</option>
+            <option value="all">Mọi web</option>
+          </select>
           <select id="logFilter" title="Lọc mức độ">
             <option value="all">Tất cả</option>
             <option value="problems">Lỗi &amp; cảnh báo</option>
-            <option value="debug">Chi tiết (debug)</option>
+            <option value="debug">Chi tiết</option>
           </select>
-          <button id="copyLogs" class="tiny secondary" title="Sao chép toàn bộ log">Sao chép</button>
-          <button id="clearLogs" class="tiny secondary" title="Xoá lịch sử">Xoá</button>
+          <button id="copyLogs" class="tiny secondary" title="Sao chép log đang hiện">Chép</button>
+          <button id="clearLogs" class="tiny secondary" title="Xoá toàn bộ lịch sử">Xoá</button>
         </div>
         <pre id="terminal" class="terminal" aria-live="polite"></pre>
       </section>
     </main>
 
-    <!-- Cài đặt (cùng panel, không mở tab mới) -->
+    <!-- Cài đặt riêng cho website của tab này (cùng panel, không mở tab mới) -->
     <section id="settingsView" class="settings" hidden>
-      <h2>Cài đặt</h2>
+      <h2 id="settingsTitle">Cài đặt</h2>
       <form id="settingsForm">
         <label>
           Tên cookie chứa access token (JWT)
-          <input
-            id="tokenCookie"
-            type="text"
-            placeholder="privateToken"
-            required
-          />
-          <small>Xem trong DevTools → Application → Cookies của website.</small>
+          <input id="tokenCookie" type="text" placeholder="privateToken" required />
+          <small>Mỗi website có thể đặt tên khác. Xem trong DevTools → Application → Cookies.</small>
         </label>
 
         <label>
           Làm mới trước khi hết hạn (giây)
-          <input
-            id="marginSec"
-            type="number"
-            min="60"
-            max="86400"
-            step="30"
-            required
-          />
+          <input id="marginSec" type="number" min="60" max="86400" step="30" required />
         </label>
 
         <label class="row">
           <input id="enabled" type="checkbox" />
-          Bật tự động giữ phiên
+          Bật tự động giữ phiên cho website này
         </label>
 
         <div class="actions">
           <button type="submit">Lưu</button>
-          <button type="button" id="checkCookie" class="secondary">
-            Kiểm tra cookie
-          </button>
-          <button type="button" id="closeSettings" class="link">
-            ← Quay lại
-          </button>
+          <button type="button" id="checkCookie" class="secondary">Kiểm tra cookie</button>
+          <button type="button" id="closeSettings" class="link">← Quay lại</button>
         </div>
       </form>
       <p id="settingsResult" class="message"></p>
       <p class="hint">
+        Cài đặt được lưu theo website, nên lần sau gắn lại tab của website này sẽ dùng luôn.
         Extension không tự gọi API, không lưu giá trị token và không mở tab mới.
-        Nó chỉ reload tab đã gắn trước khi token hết hạn để website tự làm mới
-        token.
       </p>
     </section>
 

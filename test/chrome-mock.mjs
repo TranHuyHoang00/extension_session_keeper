@@ -14,13 +14,12 @@ export function createChromeMock() {
   const db = {
     sync: {},
     local: {},
-    cookies: {},      // name -> value
-    alarms: {},       // name -> when
-    tabs: [],         // {id, url, active, windowId}
+    cookies: {}, // origin -> { name: value }
+    alarms: {}, // name -> when
+    tabs: [], // {id, url, active, windowId}
     reloaded: [],
     removedTabs: [],
-    notifications: [],
-    badge: "",
+    notifications: [], // { id, title, message }
     tabBadges: {},
     created: [],
     panelOptions: [],
@@ -32,31 +31,53 @@ export function createChromeMock() {
   };
 
   const storageArea = (name) => ({
-    get: async (key) => (key in db[name] ? { [key]: structuredClone(db[name][key]) } : {}),
+    get: async (keys) => {
+      const list = Array.isArray(keys) ? keys : [keys];
+      const out = {};
+      for (const k of list) if (k in db[name]) out[k] = structuredClone(db[name][k]);
+      return out;
+    },
     set: async (obj) => Object.assign(db[name], structuredClone(obj)),
+    remove: async (keys) => {
+      for (const k of Array.isArray(keys) ? keys : [keys]) delete db[name][k];
+    },
   });
 
   const chrome = {
     storage: { sync: storageArea("sync"), local: storageArea("local"), onChanged: event() },
     alarms: {
-      create: async (name, { when }) => { db.alarms[name] = when; },
-      clear: async (name) => { delete db.alarms[name]; return true; },
+      create: async (name, { when }) => {
+        db.alarms[name] = when;
+      },
+      clear: async (name) => {
+        delete db.alarms[name];
+        return true;
+      },
+      clearAll: async () => {
+        db.alarms = {};
+        return true;
+      },
       onAlarm: event(),
     },
     cookies: {
-      get: async ({ name }) => (name in db.cookies ? { name, value: db.cookies[name] } : null),
+      get: async ({ url, name }) => {
+        const jar = db.cookies[new URL(url).origin] || {};
+        return name in jar ? { name, value: jar[name] } : null;
+      },
       onChanged: event(),
     },
     permissions: { contains: async () => db.granted },
     tabs: {
-      query: async ({ url }) => db.tabs.filter((t) => t.url.startsWith(url.replace("/*", ""))),
+      query: async () => db.tabs,
       create: async ({ url, active }) => {
         const t = { id: db.nextTabId++, url, active: !!active, windowId: 1 };
         db.tabs.push(t);
         db.created.push(t.id);
         return t;
       },
-      reload: async (id) => { db.reloaded.push(id); },
+      reload: async (id) => {
+        db.reloaded.push(id);
+      },
       update: async (id) => db.tabs.find((t) => t.id === id),
       get: async (id) => {
         const t = db.tabs.find((x) => x.id === id);
@@ -73,20 +94,27 @@ export function createChromeMock() {
     windows: { update: async () => {} },
     scripting: { executeScript: async () => [{ result: db.pageState }] },
     sidePanel: {
-      setPanelBehavior: async (b) => { db.panelBehavior = b; },
-      setOptions: async (o) => { db.panelOptions.push(o); },
-      open: async (o) => { db.panelOpened.push(o.tabId); },
+      setPanelBehavior: async (b) => {
+        db.panelBehavior = b;
+      },
+      setOptions: async (o) => {
+        db.panelOptions.push(o);
+      },
+      open: async (o) => {
+        db.panelOpened.push(o.tabId);
+      },
     },
     action: {
       onClicked: event(),
       setBadgeText: async ({ tabId, text }) => {
-        if (tabId == null) db.badge = text;
-        else db.tabBadges[tabId] = text;
+        db.tabBadges[tabId] = text;
       },
       setBadgeBackgroundColor: async () => {},
     },
     notifications: {
-      create: async (id, opts) => { db.notifications.push(opts.message); },
+      create: async (id, opts) => {
+        db.notifications.push({ id, title: opts.title, message: opts.message });
+      },
       clear: async () => {},
       onClicked: event(),
     },
@@ -94,7 +122,6 @@ export function createChromeMock() {
       onInstalled: event(),
       onStartup: event(),
       onMessage: event(),
-      openOptionsPage: () => {},
       getURL: (p) => "chrome-extension://x/" + p,
     },
   };

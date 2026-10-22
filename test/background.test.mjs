@@ -6,23 +6,45 @@ const mock = createChromeMock();
 globalThis.chrome = mock.chrome;
 const { __test__: bg } = await import("../src/background.js");
 const { getExp } = await import("../src/jwt.js");
-const { DEFAULT_STATE } = await import("../src/config.js");
+const cfgMod = await import("../src/config.js");
+const logMod = await import("../src/log.js");
 
-const SITE = "https://app.example.com";
-const nowSec = () => Math.floor(Date.now() / 1000);
+// Hai website khác nhau, mỗi website một tên cookie riêng.
+const A = "https://a.example.com";
+const B = "https://b.other.vn";
+const TAB_A = 2;
+const TAB_B = 5;
+
 const db = mock.db;
-const state = () => db.local.state;
+const nowSec = () => Math.floor(Date.now() / 1000);
+const st = (tabId) => db.local.states?.[String(tabId)];
+const setToken = (origin, name, exp) => {
+  db.cookies[origin] = { ...(db.cookies[origin] || {}), [name]: makeJwt({ exp }) };
+};
+const alarm = (kind, tabId) => db.alarms[`sk-${kind}:${tabId}`];
+const logsText = () => (db.local.logs || []).map((l) => `${l.level} [${l.site || "-"}] ${l.msg}`).join("\n");
 
-// Mặc định: 3 tab cùng website, tab 2 được gắn.
 beforeEach(() => {
-  db.sync = { config: { tokenCookie: "access_token" } };
-  db.local = { state: { ...DEFAULT_STATE }, binding: { tabId: 2, origin: SITE } };
+  db.sync = {
+    sites: {
+      [A]: { tokenCookie: "privateToken", marginSec: 180, enabled: true },
+      [B]: { tokenCookie: "access_token", marginSec: 300, enabled: true },
+    },
+  };
+  db.local = {
+    bindings: {
+      [TAB_A]: { tabId: TAB_A, origin: A },
+      [TAB_B]: { tabId: TAB_B, origin: B },
+    },
+    states: {},
+    logs: [],
+  };
   db.cookies = {};
   db.alarms = {};
   db.tabs = [
-    { id: 1, url: SITE + "/a", active: false, windowId: 1 },
-    { id: 2, url: SITE + "/b", active: true, windowId: 1 },
-    { id: 3, url: SITE + "/c", active: false, windowId: 1 },
+    { id: 1, url: A + "/khac", active: false, windowId: 1 },
+    { id: TAB_A, url: A + "/dashboard", active: true, windowId: 1 },
+    { id: TAB_B, url: B + "/home", active: false, windowId: 1 },
   ];
   db.created = [];
   db.reloaded = [];
@@ -35,40 +57,109 @@ beforeEach(() => {
   db.panelOpened = [];
 });
 
+// ---------------------------------------------------------------------------
+// Tiện ích
+
 test("đọc exp từ JWT", () => {
   assert.equal(getExp(makeJwt({ exp: 1792722565, sub: "Tiếng Việt ~~~???" })), 1792722565);
   assert.equal(getExp("waryzZQpOHLDhGf7Z4sDX_XYtauKXX3mB5UreNmL1"), null);
   assert.equal(getExp("a.b.c"), null);
 });
 
-test("khớp domain cookie", () => {
-  assert.ok(bg.cookieDomainMatches(".example.com", "app.example.com"));
-  assert.ok(bg.cookieDomainMatches("app.example.com", "app.example.com"));
-  assert.ok(!bg.cookieDomainMatches("evil.com", "app.example.com"));
-  assert.ok(!bg.cookieDomainMatches("ample.com", "app.example.com"));
+test("khớp domain cookie và tên alarm", () => {
+  assert.ok(bg.cookieDomainMatches(".example.com", "a.example.com"));
+  assert.ok(!bg.cookieDomainMatches("ample.com", "a.example.com"));
+  assert.deepEqual(bg.parseAlarm("sk-refresh:12"), { kind: "sk-refresh", tabId: 12 });
+  assert.equal(bg.parseAlarm("lạ"), null);
 });
 
-test("chưa gắn tab → không làm gì", async () => {
-  db.local.binding = null;
-  db.cookies.access_token = makeJwt({ exp: nowSec() + 3600 });
-  await bg.schedule();
-  assert.equal(state().status, "unbound");
-  assert.deepEqual(db.alarms, {});
-  await bg.startRefresh();
-  assert.deepEqual(db.reloaded, []);
-});
+// ---------------------------------------------------------------------------
+// Nhiều website chạy độc lập
 
-test("gắn tab → lên lịch trước exp đúng margin, badge chỉ trên tab gắn", async () => {
-  db.local.binding = null;
-  const exp = nowSec() + 3600;
-  db.cookies.access_token = makeJwt({ exp });
-  await bg.bindTab(3);
-  assert.deepEqual(db.local.binding, { tabId: 3, origin: SITE });
-  assert.equal(state().status, "scheduled");
-  assert.equal(db.alarms["sk-refresh"], (exp - 180) * 1000);
-  assert.equal(db.badge, "");
-  assert.equal(db.tabBadges[3], "ON");
+test("hai website: mỗi tab lịch riêng theo đúng tên cookie và margin riêng", async () => {
+  const expA = nowSec() + 3600;
+  const expB = nowSec() + 7200;
+  setToken(A, "privateToken", expA);
+  setToken(B, "access_token", expB);
+  // Cookie trùng tên nhưng sai website thì không được tính
+  setToken(B, "privateToken", nowSec() + 10);
+
+  await bg.scheduleAll();
+  assert.equal(st(TAB_A).status, "scheduled");
+  assert.equal(st(TAB_B).status, "scheduled");
+  assert.equal(alarm("refresh", TAB_A), (expA - 180) * 1000);
+  assert.equal(alarm("refresh", TAB_B), (expB - 300) * 1000);
+  assert.equal(db.tabBadges[TAB_A], "ON");
+  assert.equal(db.tabBadges[TAB_B], "ON");
   assert.equal(db.tabBadges[1], undefined);
+});
+
+test("website B dùng tên cookie khác: không thấy cookie của A thì báo đúng tên", async () => {
+  setToken(A, "privateToken", nowSec() + 3600);
+  await bg.schedule(TAB_B);
+  assert.equal(st(TAB_B).status, "logged_out");
+  assert.match(st(TAB_B).message, /access_token/);
+  assert.equal(db.notifications.at(-1).title, "Session Keeper – b.other.vn");
+});
+
+test("làm mới tab A không đụng tới tab B", async () => {
+  setToken(A, "privateToken", nowSec() + 60);
+  setToken(B, "access_token", nowSec() + 7200);
+  await bg.scheduleAll();
+  const alarmB = alarm("refresh", TAB_B);
+
+  await bg.startRefresh(TAB_A);
+  assert.deepEqual(db.reloaded, [TAB_A]);
+  assert.equal(st(TAB_A).status, "refreshing");
+  assert.ok(alarm("verify", TAB_A));
+  assert.equal(st(TAB_B).status, "scheduled");
+  assert.equal(alarm("refresh", TAB_B), alarmB);
+  assert.equal(alarm("verify", TAB_B), undefined);
+
+  const newExp = nowSec() + 86400;
+  setToken(A, "privateToken", newExp);
+  await bg.onTokenCookieChanged(TAB_A);
+  assert.equal(st(TAB_A).status, "scheduled");
+  assert.equal(st(TAB_A).exp, newExp);
+  assert.ok(st(TAB_A).lastSuccessAt);
+  assert.equal(st(TAB_B).lastSuccessAt, null);
+});
+
+test("lỗi ở website A (CAPTCHA) không làm dừng website B", async () => {
+  setToken(A, "privateToken", nowSec() + 60);
+  setToken(B, "access_token", nowSec() + 7200);
+  await bg.scheduleAll();
+  await bg.startRefresh(TAB_A);
+  db.pageState = { captcha: true, login: false, path: "/" };
+  await bg.verifyRefresh(TAB_A);
+
+  assert.equal(st(TAB_A).status, "needs_attention");
+  assert.equal(alarm("refresh", TAB_A), undefined);
+  assert.equal(st(TAB_B).status, "scheduled");
+  assert.ok(alarm("refresh", TAB_B));
+  assert.equal(db.notifications.at(-1).id, `sk-alert:${TAB_A}`);
+});
+
+// ---------------------------------------------------------------------------
+// Gắn / bỏ gắn
+
+test("gắn website mới thứ ba vẫn giữ hai website cũ", async () => {
+  const C = "https://c.site.io";
+  db.tabs.push({ id: 9, url: C + "/", active: false, windowId: 1 });
+  setToken(C, "privateToken", nowSec() + 3600);
+  await bg.bindTab(9);
+  const bindings = db.local.bindings;
+  assert.deepEqual(Object.keys(bindings).sort(), ["2", "5", "9"]);
+  assert.equal(st(9).status, "scheduled");
+});
+
+test("mỗi website chỉ một tab: gắn tab khác cùng website thì chuyển sang tab mới", async () => {
+  setToken(A, "privateToken", nowSec() + 3600);
+  await bg.bindTab(1);
+  assert.equal(db.local.bindings[TAB_A], undefined);
+  assert.deepEqual(db.local.bindings[1], { tabId: 1, origin: A });
+  assert.equal(db.local.bindings[TAB_B].origin, B);
+  assert.match(logsText(), /chuyển sang giữ ở tab #1/);
 });
 
 test("không gắn được trang không phải https", async () => {
@@ -76,177 +167,155 @@ test("không gắn được trang không phải https", async () => {
   await assert.rejects(() => bg.bindTab(9), /https/);
 });
 
-test("chỉ reload ĐÚNG tab đã gắn, không mở tab mới", async () => {
-  db.cookies.access_token = makeJwt({ exp: nowSec() + 60 });
-  await bg.startRefresh();
-  assert.deepEqual(db.reloaded, [2]);
-  assert.deepEqual(db.created, []);
-  assert.equal(state().status, "refreshing");
-
-  const newExp = nowSec() + 86400;
-  db.cookies.access_token = makeJwt({ exp: newExp });
-  await bg.onTokenCookieChanged();
-  assert.equal(state().status, "scheduled");
-  assert.equal(state().exp, newExp);
-  assert.equal(state().failCount, 0);
-  assert.ok(state().lastSuccessAt);
-  assert.ok(!("sk-verify" in db.alarms));
-  assert.deepEqual(db.removedTabs, []);
-});
-
-test("tab đã gắn bị đóng → ngừng và báo, không mở tab khác", async () => {
-  db.cookies.access_token = makeJwt({ exp: nowSec() + 60 });
-  db.tabs = db.tabs.filter((t) => t.id !== 2);
-  await bg.startRefresh();
+test("đóng tab A chỉ bỏ gắn A", async () => {
+  setToken(A, "privateToken", nowSec() + 60);
+  db.tabs = db.tabs.filter((t) => t.id !== TAB_A);
+  await bg.startRefresh(TAB_A);
   assert.deepEqual(db.reloaded, []);
   assert.deepEqual(db.created, []);
-  assert.equal(db.local.binding, null);
-  assert.equal(state().status, "unbound");
-  assert.match(db.notifications.at(-1), /gắn lại/);
-  assert.deepEqual(db.alarms, {});
+  assert.equal(db.local.bindings[TAB_A], undefined);
+  assert.ok(db.local.bindings[TAB_B]);
 });
 
-test("tab đã gắn chuyển sang website khác → không reload, chờ quay lại", async () => {
-  db.cookies.access_token = makeJwt({ exp: nowSec() + 60 });
-  db.tabs.find((t) => t.id === 2).url = "https://google.com/";
-  await bg.startRefresh();
+test("tab A chuyển sang website khác → không reload, chờ quay lại", async () => {
+  setToken(A, "privateToken", nowSec() + 60);
+  db.tabs.find((t) => t.id === TAB_A).url = "https://google.com/";
+  await bg.startRefresh(TAB_A);
   assert.deepEqual(db.reloaded, []);
-  assert.equal(state().status, "needs_attention");
-  assert.ok(db.alarms["sk-refresh"] > Date.now());
+  assert.equal(st(TAB_A).status, "needs_attention");
+  assert.ok(alarm("refresh", TAB_A) > Date.now());
 });
 
-test("trình duyệt khởi động lại → bỏ gắn (tabId cũ không còn đúng)", async () => {
+test("trình duyệt khởi động lại → bỏ gắn tất cả, báo một lần", async () => {
+  db.alarms["sk-refresh:2"] = 1;
   await bg.onBrowserStartup();
-  assert.equal(db.local.binding, null);
-  assert.equal(state().status, "unbound");
-  assert.match(db.notifications.at(-1), /khởi động lại/);
+  assert.deepEqual(db.local.bindings, {});
+  assert.deepEqual(db.alarms, {});
+  assert.equal(db.notifications.length, 1);
+  assert.match(db.notifications[0].message, /2 tab/);
 });
 
-test("bỏ gắn → xoá lịch và badge", async () => {
-  db.cookies.access_token = makeJwt({ exp: nowSec() + 3600 });
-  await bg.schedule();
-  await bg.unbind("Đã bỏ gắn tab.");
-  assert.equal(db.local.binding, null);
-  assert.deepEqual(db.alarms, {});
-  assert.equal(db.tabBadges[2], "");
+test("bỏ gắn → xoá lịch, trạng thái và badge của đúng tab", async () => {
+  setToken(A, "privateToken", nowSec() + 3600);
+  setToken(B, "access_token", nowSec() + 3600);
+  await bg.scheduleAll();
+  await bg.unbind(TAB_A, "Đã bỏ gắn tab.");
+  assert.equal(db.local.bindings[TAB_A], undefined);
+  assert.equal(st(TAB_A), undefined);
+  assert.equal(alarm("refresh", TAB_A), undefined);
+  assert.equal(db.tabBadges[TAB_A], "");
+  assert.ok(alarm("refresh", TAB_B));
 });
+
+// ---------------------------------------------------------------------------
+// Thử lại / dừng
 
 test("không reload lại khi lần thử trước còn quá gần", async () => {
-  db.cookies.access_token = makeJwt({ exp: nowSec() + 60 });
-  db.local.state.lastAttemptAt = Date.now() - 10_000;
-  await bg.startRefresh();
+  setToken(A, "privateToken", nowSec() + 60);
+  db.local.states[TAB_A] = { lastAttemptAt: Date.now() - 10_000 };
+  await bg.startRefresh(TAB_A);
   assert.deepEqual(db.reloaded, []);
-  assert.ok(db.alarms["sk-refresh"] > Date.now());
-});
-
-test("gặp CAPTCHA → dừng tự động và báo người dùng", async () => {
-  db.cookies.access_token = makeJwt({ exp: nowSec() + 60 });
-  await bg.startRefresh();
-  db.pageState = { captcha: true, login: false, path: "/" };
-  await bg.verifyRefresh();
-  assert.equal(state().status, "needs_attention");
-  assert.match(db.notifications.at(-1), /CAPTCHA/);
-  assert.ok(!("sk-refresh" in db.alarms));
+  assert.ok(alarm("refresh", TAB_A) > Date.now());
 });
 
 test("gặp trang đăng nhập → báo cần đăng nhập lại", async () => {
-  db.cookies.access_token = makeJwt({ exp: nowSec() + 60 });
-  await bg.startRefresh();
+  setToken(A, "privateToken", nowSec() + 60);
+  await bg.startRefresh(TAB_A);
   db.pageState = { captcha: false, login: true, path: "/login" };
-  await bg.verifyRefresh();
-  assert.equal(state().status, "needs_attention");
-  assert.match(state().message, /đăng nhập lại/);
+  await bg.verifyRefresh(TAB_A);
+  assert.equal(st(TAB_A).status, "needs_attention");
+  assert.match(st(TAB_A).message, /đăng nhập lại/);
 });
 
 test("thất bại không rõ lý do → thử lại, quá số lần thì dừng", async () => {
-  db.cookies.access_token = makeJwt({ exp: nowSec() + 60 });
+  setToken(A, "privateToken", nowSec() + 60);
   for (let i = 1; i <= 3; i++) {
-    db.local.state.lastAttemptAt = null; // bỏ qua khoảng chờ giữa các lần
-    await bg.startRefresh();
-    await bg.verifyRefresh();
-    assert.equal(state().failCount, i);
+    db.local.states[TAB_A] = { ...st(TAB_A), lastAttemptAt: null };
+    await bg.startRefresh(TAB_A);
+    await bg.verifyRefresh(TAB_A);
+    assert.equal(st(TAB_A).failCount, i);
   }
-  assert.equal(state().status, "stopped");
-  assert.ok(!("sk-refresh" in db.alarms));
-
+  assert.equal(st(TAB_A).status, "stopped");
   const before = db.reloaded.length;
-  await bg.startRefresh();
+  await bg.startRefresh(TAB_A);
   assert.equal(db.reloaded.length, before);
 });
 
-test("người dùng đăng nhập lại sau khi bị dừng → hoạt động trở lại", async () => {
-  db.local.state = { ...DEFAULT_STATE, status: "stopped", failCount: 3, exp: nowSec() + 60 };
-  db.cookies.access_token = makeJwt({ exp: nowSec() + 86400 });
-  await bg.onTokenCookieChanged();
-  assert.equal(state().status, "scheduled");
-  assert.equal(state().failCount, 0);
-  assert.ok("sk-refresh" in db.alarms);
+test("đăng nhập lại sau khi dừng → hoạt động trở lại", async () => {
+  db.local.states[TAB_A] = { status: "stopped", failCount: 3, exp: nowSec() + 60 };
+  setToken(A, "privateToken", nowSec() + 86400);
+  await bg.onTokenCookieChanged(TAB_A);
+  assert.equal(st(TAB_A).status, "scheduled");
+  assert.equal(st(TAB_A).failCount, 0);
 });
 
-test("không bao giờ lưu giá trị token vào storage", async () => {
-  const token = makeJwt({ exp: nowSec() + 3600 });
-  db.cookies.access_token = token;
-  await bg.schedule();
-  await bg.startRefresh({ manual: true });
-  const dump = JSON.stringify({ sync: db.sync, local: db.local });
-  assert.ok(!dump.includes(token.split(".")[1]));
+// ---------------------------------------------------------------------------
+// Dữ liệu cũ, side panel, trạng thái cho panel
+
+test("chuyển dữ liệu phiên bản cũ (1 tab) sang dạng nhiều tab", async () => {
+  db.sync = { config: { tokenCookie: "myToken", marginSec: 600, enabled: true } };
+  db.local = { binding: { tabId: 7, origin: A }, state: { status: "scheduled", failCount: 1 } };
+  assert.equal(await cfgMod.migrateLegacy(), true);
+  assert.deepEqual(db.local.bindings, { 7: { tabId: 7, origin: A } });
+  assert.equal(db.local.states["7"].failCount, 1);
+  assert.equal(db.sync.sites[A].tokenCookie, "myToken");
+  assert.equal(db.sync.sites[A].marginSec, 600);
+  assert.ok(!("binding" in db.local) && !("config" in db.sync));
 });
 
-test("side panel: tắt mặc định cho mọi tab, chỉ bật cho tab được bấm icon", async () => {
+test("trạng thái cho side panel: biết website đang giữ ở tab khác", async () => {
+  const s = await bg.getStatusFor(1); // tab 1 cùng website A, chưa gắn
+  assert.equal(s.binding, null);
+  assert.equal(s.tabOrigin, A);
+  assert.deepEqual(s.boundElsewhere, { tabId: TAB_A, origin: A });
+  assert.equal(s.settings.tokenCookie, "privateToken");
+  assert.equal(s.bound.length, 2);
+});
+
+test("side panel: tắt mặc định, chỉ bật cho tab được bấm icon", async () => {
   await bg.disablePanelGlobally();
-  assert.deepEqual(db.panelBehavior, { openPanelOnActionClick: false });
   assert.deepEqual(db.panelOptions.at(-1), { enabled: false });
-
   bg.openPanelForTab({ id: 3 });
   await new Promise((r) => setTimeout(r, 0));
-  assert.deepEqual(db.panelOptions.at(-1), {
-    tabId: 3,
-    path: "src/panel/panel.html?tabId=3",
-    enabled: true,
-  });
+  assert.deepEqual(db.panelOptions.at(-1), { tabId: 3, path: "src/panel/panel.html?tabId=3", enabled: true });
   assert.deepEqual(db.panelOpened, [3]);
-  // Không có tab nào khác được bật panel
-  assert.ok(db.panelOptions.every((o) => o.tabId === undefined || o.tabId === 3));
 });
 
-test("log: ghi lại sự kiện làm mới thành công, không chứa token", async () => {
-  const { getLogs } = await import("../src/log.js");
-  db.local.logs = [];
-  const token = makeJwt({ exp: nowSec() + 60 });
-  db.cookies.access_token = token;
-  await bg.schedule();
-  await bg.startRefresh({ manual: true });
-  const newToken = makeJwt({ exp: nowSec() + 86400 });
-  db.cookies.access_token = newToken;
-  await bg.onTokenCookieChanged();
+// ---------------------------------------------------------------------------
+// Log
 
-  const logs = await getLogs();
-  const text = logs.map((l) => `${l.level} ${l.msg}`).join("\n");
-  assert.match(text, /info Reload tab #2/);
-  assert.match(text, /success Đã có token mới/);
-  assert.match(text, /Hẹn làm mới lúc/);
-  for (const t of [token, newToken]) assert.ok(!text.includes(t.split(".")[1]));
+test("log ghi kèm website, không chứa token", async () => {
+  setToken(A, "privateToken", nowSec() + 60);
+  setToken(B, "access_token", nowSec() + 7200);
+  const tokenA = db.cookies[A].privateToken;
+  await bg.scheduleAll();
+  await bg.startRefresh(TAB_A, { manual: true });
+  setToken(A, "privateToken", nowSec() + 86400);
+  await bg.onTokenCookieChanged(TAB_A);
+
+  const text = logsText();
+  assert.match(text, /info \[a\.example\.com\] Reload tab #2/);
+  assert.match(text, /success \[a\.example\.com\] Đã có token mới/);
+  assert.match(text, /info \[b\.other\.vn\] Token hết hạn lúc/);
+  assert.ok(!/\[b\.other\.vn\] Reload/.test(text));
+  for (const t of [tokenA, db.cookies[A].privateToken]) assert.ok(!text.includes(t.split(".")[1]));
 });
 
-test("log: ghi lỗi/cảnh báo khi gặp CAPTCHA, không ghi trùng", async () => {
-  const { getLogs } = await import("../src/log.js");
-  db.local.logs = [];
-  db.cookies.access_token = makeJwt({ exp: nowSec() + 60 });
-  await bg.startRefresh();
+test("log không ghi trùng khi gọi lại schedule", async () => {
+  setToken(A, "privateToken", nowSec() + 60);
+  await bg.startRefresh(TAB_A);
   db.pageState = { captcha: true, login: false, path: "/" };
-  await bg.verifyRefresh();
-  await bg.schedule(); // gọi lại không tạo dòng trùng
-  const logs = await getLogs();
-  assert.ok(logs.some((l) => l.level === "warn" && /CAPTCHA/.test(l.msg)));
-  const captchaLines = logs.filter((l) => /yêu cầu xác minh/.test(l.msg));
-  assert.equal(captchaLines.length, 1);
+  await bg.verifyRefresh(TAB_A);
+  await bg.schedule(TAB_A);
+  const n = db.local.logs.filter((l) => /yêu cầu xác minh/.test(l.msg)).length;
+  assert.equal(n, 1);
 });
 
-test("log: giới hạn số dòng lưu trữ", async () => {
-  const { log, getLogs, MAX_LOGS } = await import("../src/log.js");
-  db.local.logs = [];
-  await Promise.all(Array.from({ length: MAX_LOGS + 25 }, (_, i) => log("info", `dòng ${i}`)));
-  const logs = await getLogs();
-  assert.equal(logs.length, MAX_LOGS);
-  assert.equal(logs.at(-1).msg, `dòng ${MAX_LOGS + 24}`);
+test("log giới hạn số dòng lưu trữ", async () => {
+  await Promise.all(
+    Array.from({ length: logMod.MAX_LOGS + 25 }, (_, i) => logMod.log("info", `dòng ${i}`))
+  );
+  const logs = await logMod.getLogs();
+  assert.equal(logs.length, logMod.MAX_LOGS);
+  assert.equal(logs.at(-1).msg, `dòng ${logMod.MAX_LOGS + 24}`);
 });

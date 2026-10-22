@@ -1,19 +1,24 @@
 // Nhật ký sự kiện, lưu trong chrome.storage.local để side panel hiển thị dạng terminal.
 // KHÔNG bao giờ ghi giá trị token vào log.
+//
+// Mỗi dòng: { t, level, msg, tabId?, site? }  (site = tên miền, để phân biệt nhiều website)
 
 export const LOG_KEY = "logs";
-export const MAX_LOGS = 300;
+export const MAX_LOGS = 500;
 export const LEVELS = ["info", "success", "warn", "error", "debug"];
 
 // Ghi tuần tự để các dòng log không ghi đè nhau.
 let queue = Promise.resolve();
 
-export function log(level, message) {
+export function log(level, message, ctx = {}) {
   const entry = {
     t: Date.now(),
     level: LEVELS.includes(level) ? level : "info",
     msg: String(message),
   };
+  if (ctx.tabId != null) entry.tabId = ctx.tabId;
+  if (ctx.site) entry.site = ctx.site;
+
   const run = queue.then(async () => {
     const { [LOG_KEY]: logs = [] } = await chrome.storage.local.get(LOG_KEY);
     logs.push(entry);
@@ -23,12 +28,6 @@ export function log(level, message) {
   queue = run.catch(() => {});
   return run;
 }
-
-export const logInfo = (m) => log("info", m);
-export const logSuccess = (m) => log("success", m);
-export const logWarn = (m) => log("warn", m);
-export const logError = (m) => log("error", m);
-export const logDebug = (m) => log("debug", m);
 
 export async function getLogs() {
   const { [LOG_KEY]: logs = [] } = await chrome.storage.local.get(LOG_KEY);
@@ -52,5 +51,6 @@ export function formatTime(ms) {
 }
 
 export function formatLine(e) {
-  return `[${formatTime(e.t)}] ${e.level.toUpperCase().padEnd(7)} ${e.msg}`;
+  const site = e.site ? `[${e.site}] ` : "";
+  return `[${formatTime(e.t)}] ${e.level.toUpperCase().padEnd(7)} ${site}${e.msg}`;
 }

@@ -1,9 +1,9 @@
-import { normalizeOrigin, getConfig, saveConfig } from "../config.js";
+import { getSiteSettings, saveSiteSettings, hostOf } from "../config.js";
 import { getExp } from "../jwt.js";
-import { LOG_KEY, getLogs, clearLogs, formatTime, formatLine, logError } from "../log.js";
+import { LOG_KEY, getLogs, clearLogs, formatTime, formatLine, log } from "../log.js";
 
 const STATUS_LABEL = {
-  unbound: "Chưa gắn tab",
+  unbound: "Chưa gắn",
   idle: "Đang tắt",
   scheduled: "Đang giữ phiên",
   ok: "Ổn định",
@@ -15,97 +15,119 @@ const STATUS_LABEL = {
 };
 
 const $ = (id) => document.getElementById(id);
-let currentTab = null;
-let currentOrigin = null;
+const show = (el, visible) => (el.hidden = !visible);
+
+// Side panel được mở riêng cho một tab; tabId nằm trong URL của panel.
+const TAB_ID = Number(new URLSearchParams(location.search).get("tabId"));
+let info = null; // kết quả getStatus gần nhất
 
 function fmt(ms) {
   if (!ms) return "–";
   const diff = ms - Date.now();
   const abs = Math.abs(diff);
   const rel =
-    abs < 60_000 ? "vài giây" : abs < 3_600_000 ? `${Math.round(abs / 60_000)} phút` : `${(abs / 3_600_000).toFixed(1)} giờ`;
+    abs < 60_000
+      ? "vài giây"
+      : abs < 3_600_000
+        ? `${Math.round(abs / 60_000)} phút`
+        : `${(abs / 3_600_000).toFixed(1)} giờ`;
   return `${new Date(ms).toLocaleString("vi-VN")} (${diff >= 0 ? "còn " + rel : rel + " trước"})`;
 }
 
-async function send(type, extra = {}) {
-  const res = await chrome.runtime.sendMessage({ type, ...extra });
+async function send(type) {
+  const res = await chrome.runtime.sendMessage({ type, tabId: TAB_ID });
   if (!res?.ok) throw new Error(res?.error || "Không có phản hồi");
   return res.result;
 }
 
-function show(el, visible) {
-  el.hidden = !visible;
-}
+// ---------------------------------------------------------------------------
+// Màn hình chính
 
 async function render() {
-  const { state, config } = await send("getStatus");
-  const bound = config.boundTabId != null;
-  const isThisTab = bound && currentTab?.id === config.boundTabId;
+  info = await send("getStatus");
+  const { binding, state, settings, tabOrigin, settingsOrigin, boundElsewhere, bound } = info;
+  const host = settingsOrigin ? hostOf(settingsOrigin) : "";
+  const status = binding ? state.status : "unbound";
 
-  $("status").textContent = STATUS_LABEL[state.status] || state.status;
-  $("status").dataset.status = state.status;
-  $("message").textContent = state.message || "";
+  $("siteLabel").textContent = host || "Trang không hỗ trợ";
+  $("status").textContent = STATUS_LABEL[status] || status;
+  $("status").dataset.status = status;
+  $("message").textContent = binding ? state.message || "" : "";
 
   // Khu vực gắn tab
-  if (isThisTab) {
-    $("bindText").textContent = "Extension đang giữ phiên cho tab này.";
-  } else if (bound) {
-    $("bindText").textContent = "Extension đang gắn với một tab khác.";
-  } else if (currentOrigin) {
-    $("bindText").textContent = "Gắn extension vào tab này để giữ phiên đăng nhập.";
+  if (binding) {
+    $("bindText").textContent = `Đang giữ phiên cho ${host} ở tab này.`;
+  } else if (boundElsewhere) {
+    $("bindText").textContent = `${host} đang được giữ ở tab #${boundElsewhere.tabId}. Mỗi website chỉ giữ ở một tab.`;
+  } else if (tabOrigin) {
+    $("bindText").textContent = `Gắn tab này để giữ phiên đăng nhập cho ${host}.`;
   } else {
-    $("bindText").textContent = "Hãy mở website (https) cần giữ phiên rồi bấm lại icon này.";
+    $("bindText").textContent = "Trang này không phải https nên không gắn được. Hãy mở website cần giữ phiên.";
   }
-  show($("bind"), !isThisTab && !!currentOrigin);
-  $("bind").textContent = bound ? "Chuyển sang tab này" : "Gắn vào tab này";
-  show($("unbind"), bound);
-  show($("goto"), bound && !isThisTab);
+  show($("bind"), !binding && !!tabOrigin);
+  $("bind").textContent = boundElsewhere ? "Chuyển sang tab này" : "Gắn vào tab này";
+  show($("unbind"), !!binding);
+  show($("goto"), !binding && !!boundElsewhere);
 
-  // Thông tin chi tiết chỉ có ý nghĩa khi đã gắn
-  show($("facts"), bound);
-  $("site").textContent = config.siteUrl || "–";
-  $("exp").textContent = state.exp ? fmt(state.exp * 1000) : "–";
-  $("next").textContent = fmt(state.nextRefreshAt);
-  $("last").textContent = fmt(state.lastSuccessAt);
-  $("fails").textContent = String(state.failCount);
+  // Thông tin chi tiết chỉ có khi tab này đã gắn
+  show($("facts"), !!binding);
+  if (binding) {
+    $("cookieName").textContent = settings.tokenCookie;
+    $("exp").textContent = state.exp ? fmt(state.exp * 1000) : "–";
+    $("next").textContent = fmt(state.nextRefreshAt);
+    $("last").textContent = fmt(state.lastSuccessAt);
+    $("fails").textContent = String(state.failCount);
+  }
+  show($("refresh"), !!binding);
+  show($("reset"), !!binding);
+  $("refresh").disabled = !binding || !settings.enabled || state.status === "refreshing";
+  show($("openSettings"), !!settingsOrigin);
 
-  show($("refresh"), bound);
-  show($("reset"), bound);
-  $("refresh").disabled = !config.enabled || state.status === "refreshing";
+  // Các website đang được giữ
+  const others = bound.filter((b) => b.tabId !== TAB_ID);
+  $("boundList").textContent = others.length
+    ? `Đang giữ thêm: ${others.map((b) => `${b.site} (tab #${b.tabId})`).join(", ")}.`
+    : "";
+
+  await refreshLogs();
 }
 
-async function act(type, extra) {
+async function act(type) {
   try {
-    await send(type, extra);
+    await send(type);
+    await render();
   } catch (err) {
-    $("message").textContent = err.message || String(err);
-    logError(err.message || String(err));
-    return render().then(() => ($("message").textContent = err.message || String(err)));
+    const msg = err.message || String(err);
+    await log("error", msg, { tabId: TAB_ID, site: info?.settingsOrigin ? hostOf(info.settingsOrigin) : undefined });
+    await render().catch(() => {});
+    $("message").textContent = msg;
   }
-  await render();
 }
 
 $("bind").addEventListener("click", () => {
-  if (!currentTab || !currentOrigin) return;
+  const origin = info?.tabOrigin;
+  if (!origin) return;
   // permissions.request phải gọi ngay trong lần bấm của người dùng.
-  chrome.permissions.request({ origins: [currentOrigin + "/*"] }, (granted) => {
+  chrome.permissions.request({ origins: [origin + "/*"] }, (granted) => {
     if (!granted) {
       $("message").textContent = "Bạn chưa cấp quyền cho website này nên không thể gắn.";
       return;
     }
-    act("bind", { tabId: currentTab.id });
+    act("bind");
   });
 });
 $("unbind").addEventListener("click", () => act("unbind"));
 $("goto").addEventListener("click", async () => {
-  const { config } = await send("getStatus");
-  const tab = await chrome.tabs.update(config.boundTabId, { active: true });
+  const id = info?.boundElsewhere?.tabId;
+  if (id == null) return;
+  const tab = await chrome.tabs.update(id, { active: true });
   await chrome.windows.update(tab.windowId, { focused: true });
 });
 $("refresh").addEventListener("click", () => act("refreshNow"));
 $("reset").addEventListener("click", () => act("reset"));
+
 // ---------------------------------------------------------------------------
-// Cài đặt ngay trong panel
+// Cài đặt theo website, ngay trong panel
 
 const showSettingsResult = (text, kind = "") => {
   $("settingsResult").textContent = text;
@@ -113,10 +135,13 @@ const showSettingsResult = (text, kind = "") => {
 };
 
 async function openSettings() {
-  const cfg = await getConfig();
-  $("tokenCookie").value = cfg.tokenCookie;
-  $("marginSec").value = cfg.marginSec;
-  $("enabled").checked = cfg.enabled;
+  const origin = info?.settingsOrigin;
+  if (!origin) return;
+  const s = await getSiteSettings(origin);
+  $("settingsTitle").textContent = `Cài đặt cho ${hostOf(origin)}`;
+  $("tokenCookie").value = s.tokenCookie;
+  $("marginSec").value = s.marginSec;
+  $("enabled").checked = s.enabled;
   showSettingsResult("");
   show($("mainView"), false);
   show($("settingsView"), true);
@@ -133,71 +158,72 @@ $("closeSettings").addEventListener("click", closeSettings);
 
 $("settingsForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  await saveConfig({
+  const origin = info?.settingsOrigin;
+  if (!origin) return;
+  await saveSiteSettings(origin, {
     tokenCookie: $("tokenCookie").value.trim(),
     marginSec: Math.max(60, Number($("marginSec").value) || 180),
     enabled: $("enabled").checked,
   });
-  showSettingsResult("Đã lưu.", "ok");
+  showSettingsResult(`Đã lưu cài đặt cho ${hostOf(origin)}.`, "ok");
 });
 
 $("checkCookie").addEventListener("click", async () => {
-  const cfg = await getConfig();
+  const origin = info?.settingsOrigin;
   const name = $("tokenCookie").value.trim();
-  if (!cfg.siteUrl) return showSettingsResult("Chưa gắn tab nào. Quay lại và bấm \"Gắn vào tab này\" trước.", "error");
+  if (!origin) return showSettingsResult("Trang này không phải https.", "error");
   if (!name) return showSettingsResult("Nhập tên cookie trước.", "error");
-  const cookie = await chrome.cookies.get({ url: cfg.siteUrl, name });
-  if (!cookie) return showSettingsResult(`Không tìm thấy cookie "${name}" trên ${cfg.siteUrl}. Bạn đã đăng nhập chưa?`, "error");
+  if (!(await chrome.permissions.contains({ origins: [origin + "/*"] }))) {
+    return showSettingsResult('Chưa có quyền với website này. Quay lại và bấm "Gắn vào tab này" trước.', "error");
+  }
+  const cookie = await chrome.cookies.get({ url: origin, name });
+  if (!cookie) return showSettingsResult(`Không tìm thấy cookie "${name}" trên ${hostOf(origin)}. Bạn đã đăng nhập chưa?`, "error");
   const exp = getExp(cookie.value);
   if (!exp) return showSettingsResult(`Cookie "${name}" không phải JWT hoặc không có trường exp.`, "error");
   showSettingsResult(`Tìm thấy token. Hết hạn lúc ${new Date(exp * 1000).toLocaleString("vi-VN")}.`, "ok");
 });
 
-// Side panel được mở riêng cho một tab; tabId nằm trong URL của panel.
-const PANEL_TAB_ID = Number(new URLSearchParams(location.search).get("tabId"));
-
-async function loadTab() {
-  try {
-    currentTab = Number.isInteger(PANEL_TAB_ID) && PANEL_TAB_ID > 0
-      ? await chrome.tabs.get(PANEL_TAB_ID)
-      : (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
-  } catch {
-    currentTab = null;
-  }
-  currentOrigin = currentTab ? normalizeOrigin(currentTab.pendingUrl || currentTab.url || "") : null;
-}
-
-async function tick() {
-  await loadTab(); // tab có thể đã chuyển trang
-  await render();
-}
-
-tick();
-setInterval(tick, 5000);
-chrome.tabs.onUpdated.addListener((tabId, info) => {
-  if (tabId === PANEL_TAB_ID && info.status === "complete") tick();
-});
-
 // ---------------------------------------------------------------------------
 // Terminal lịch sử
 
-const FILTERS = {
+const LEVEL_FILTERS = {
   all: (e) => e.level !== "debug",
   problems: (e) => e.level === "warn" || e.level === "error",
   debug: () => true,
 };
-let logFilter = "all";
-try {
-  logFilter = localStorage.getItem("sk-log-filter") || "all";
-} catch {
-  /* bỏ qua */
+
+const pref = {
+  get(k, d) {
+    try {
+      return localStorage.getItem(k) || d;
+    } catch {
+      return d;
+    }
+  },
+  set(k, v) {
+    try {
+      localStorage.setItem(k, v);
+    } catch {
+      /* bỏ qua */
+    }
+  },
+};
+$("logFilter").value = LEVEL_FILTERS[pref.get("sk-log-filter", "all")] ? pref.get("sk-log-filter", "all") : "all";
+$("logScope").value = pref.get("sk-log-scope", "site") === "all" ? "all" : "site";
+
+function visibleLogs(logs) {
+  const levelOk = LEVEL_FILTERS[$("logFilter").value] || LEVEL_FILTERS.all;
+  const host = info?.settingsOrigin ? hostOf(info.settingsOrigin) : null;
+  const siteScope = $("logScope").value === "site";
+  // "Website này": log của website này + log chung (không gắn website nào).
+  return logs.filter((e) => levelOk(e) && (!siteScope || !e.site || e.site === host));
 }
-$("logFilter").value = FILTERS[logFilter] ? logFilter : "all";
 
 function renderLogs(logs) {
   const term = $("terminal");
   const nearBottom = term.scrollHeight - term.scrollTop - term.clientHeight < 40;
-  const shown = logs.filter(FILTERS[$("logFilter").value] || FILTERS.all);
+  const shown = visibleLogs(logs);
+  const showSite = $("logScope").value === "all";
 
   term.replaceChildren();
   if (!shown.length) {
@@ -218,7 +244,13 @@ function renderLogs(logs) {
     level.textContent = e.level.toUpperCase();
     const msg = document.createElement("span");
     msg.className = "log-msg";
-    msg.textContent = e.msg;
+    if (showSite && e.site) {
+      const site = document.createElement("span");
+      site.className = "log-site";
+      site.textContent = `[${e.site}] `;
+      msg.append(site);
+    }
+    msg.append(e.msg);
     line.append(time, level, msg);
     term.append(line);
   }
@@ -229,24 +261,22 @@ async function refreshLogs() {
   renderLogs(await getLogs());
 }
 
-$("logFilter").addEventListener("change", () => {
-  try {
-    localStorage.setItem("sk-log-filter", $("logFilter").value);
-  } catch {
-    /* bỏ qua */
-  }
-  refreshLogs();
-});
+for (const id of ["logFilter", "logScope"]) {
+  $(id).addEventListener("change", () => {
+    pref.set(id === "logFilter" ? "sk-log-filter" : "sk-log-scope", $(id).value);
+    refreshLogs();
+  });
+}
 
 $("copyLogs").addEventListener("click", async () => {
-  const logs = (await getLogs()).filter(FILTERS[$("logFilter").value] || FILTERS.all);
+  const lines = visibleLogs(await getLogs()).map(formatLine).join("\n");
   try {
-    await navigator.clipboard.writeText(logs.map(formatLine).join("\n"));
+    await navigator.clipboard.writeText(lines);
     $("copyLogs").textContent = "Đã chép";
   } catch {
-    $("copyLogs").textContent = "Lỗi chép";
+    $("copyLogs").textContent = "Lỗi";
   }
-  setTimeout(() => ($("copyLogs").textContent = "Sao chép"), 1500);
+  setTimeout(() => ($("copyLogs").textContent = "Chép"), 1500);
 });
 
 $("clearLogs").addEventListener("click", async () => {
@@ -254,11 +284,30 @@ $("clearLogs").addEventListener("click", async () => {
   await refreshLogs();
 });
 
-// Cập nhật ngay khi background ghi log mới.
+// Cập nhật ngay khi background ghi log mới hoặc trạng thái đổi.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && changes[LOG_KEY]) renderLogs(changes[LOG_KEY].newValue || []);
+  if (area !== "local") return;
+  if (changes[LOG_KEY]) renderLogs(changes[LOG_KEY].newValue || []);
+  if (changes.states || changes.bindings) tick();
 });
 
-refreshLogs().then(() => {
-  $("terminal").scrollTop = $("terminal").scrollHeight;
+// ---------------------------------------------------------------------------
+
+let ticking = false;
+async function tick() {
+  if (ticking || !$("settingsView").hidden) return;
+  ticking = true;
+  try {
+    await render();
+  } catch (err) {
+    $("message").textContent = err.message || String(err);
+  } finally {
+    ticking = false;
+  }
+}
+
+tick().then(() => ($("terminal").scrollTop = $("terminal").scrollHeight));
+setInterval(tick, 5000);
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (tabId === TAB_ID && changeInfo.status === "complete") tick();
 });

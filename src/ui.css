@@ -111,3 +111,11 @@ button.tiny { font-size: 12px; padding: 2px 8px; }
 .log-error .log-level, .log-error .log-msg { color: #f85149; }
 .log-debug .log-level, .log-debug .log-msg { color: #8b949e; }
 .log-empty { color: #6e7681; }
+.site-label {
+  font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.terminal-bar { flex-wrap: wrap; }
+.log-site { color: #a5d6ff; }
+.terminal-bar { flex-wrap: nowrap; }
+.terminal-title { flex: none; }
+.terminal-bar select { flex: 1 1 0; min-width: 0; }

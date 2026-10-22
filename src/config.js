@@ -1,12 +1,22 @@
 // Cấu hình và trạng thái lưu trong chrome.storage.
 // Lưu ý: KHÔNG bao giờ lưu giá trị token, chỉ lưu các mốc thời gian.
+//
+// Dữ liệu:
+//   sync.sites     { [origin]: { tokenCookie, marginSec, enabled } }   cài đặt theo website
+//   local.bindings { [tabId]: { tabId, origin } }                      tab đang gắn (mỗi website 1 tab)
+//   local.states   { [tabId]: state }                                  trạng thái theo tab
 
-export const DEFAULT_CONFIG = {
-  tokenCookie: "privateToken",
-  marginSec: 180, // refresh trước khi hết hạn bao nhiêu giây
+// Thông số chung (nâng cao) cho mọi website.
+export const DEFAULTS = {
   verifyDelaySec: 60, // chờ bao lâu sau khi reload để kiểm tra token mới
   minRetryGapSec: 300, // khoảng cách tối thiểu giữa 2 lần thử
   maxFailures: 3, // thất bại liên tiếp bao nhiêu lần thì dừng
+};
+
+// Cài đặt mặc định của một website.
+export const DEFAULT_SITE = {
+  tokenCookie: "privateToken",
+  marginSec: 180, // refresh trước khi hết hạn bao nhiêu giây
   enabled: true,
 };
 
@@ -21,56 +31,133 @@ export const DEFAULT_STATE = {
   attemptExp: null, // exp trước khi thử refresh
 };
 
-/**
- * Cấu hình đang dùng = cấu hình người dùng (sync) + tab đang gắn (local).
- * siteUrl lấy từ origin của tab đã gắn; chưa gắn tab thì siteUrl rỗng.
- */
-export async function getConfig() {
-  const [{ config }, binding] = await Promise.all([
-    chrome.storage.sync.get("config"),
-    getBinding(),
-  ]);
-  return {
-    ...DEFAULT_CONFIG,
-    ...(config || {}),
-    siteUrl: binding?.origin || "",
-    boundTabId: binding?.tabId ?? null,
-  };
+const key = (tabId) => String(tabId);
+
+// ---------------------------------------------------------------------------
+// Cài đặt theo website
+
+export async function getAllSites() {
+  const { sites } = await chrome.storage.sync.get("sites");
+  return sites || {};
 }
 
-export async function saveConfig(patch) {
-  const { config } = await chrome.storage.sync.get("config");
-  const next = { ...DEFAULT_CONFIG, ...(config || {}), ...patch };
-  delete next.siteUrl;
-  delete next.boundTabId;
-  await chrome.storage.sync.set({ config: next });
+export async function getSiteSettings(origin) {
+  const sites = await getAllSites();
+  return { ...DEFAULT_SITE, ...(sites[origin] || {}) };
+}
+
+export async function saveSiteSettings(origin, patch) {
+  const sites = await getAllSites();
+  sites[origin] = { ...DEFAULT_SITE, ...(sites[origin] || {}), ...patch };
+  await chrome.storage.sync.set({ sites });
+  return sites[origin];
+}
+
+// ---------------------------------------------------------------------------
+// Tab đang gắn
+
+export async function getBindings() {
+  const { bindings } = await chrome.storage.local.get("bindings");
+  return bindings || {};
+}
+
+export async function getBinding(tabId) {
+  const bindings = await getBindings();
+  return bindings[key(tabId)] || null;
+}
+
+export async function findBindingByOrigin(origin) {
+  const bindings = await getBindings();
+  return Object.values(bindings).find((b) => b.origin === origin) || null;
+}
+
+export async function setBinding(tabId, origin) {
+  const bindings = await getBindings();
+  bindings[key(tabId)] = { tabId, origin };
+  await chrome.storage.local.set({ bindings });
+}
+
+export async function removeBinding(tabId) {
+  const bindings = await getBindings();
+  delete bindings[key(tabId)];
+  await chrome.storage.local.set({ bindings });
+}
+
+export async function clearAllBindings() {
+  await chrome.storage.local.set({ bindings: {}, states: {} });
+}
+
+// ---------------------------------------------------------------------------
+// Cấu hình đầy đủ của một tab = thông số chung + cài đặt website + thông tin gắn.
+// Trả về null nếu tab chưa gắn.
+
+export async function getConfig(tabId) {
+  const binding = await getBinding(tabId);
+  if (!binding) return null;
+  const site = await getSiteSettings(binding.origin);
+  return { ...DEFAULTS, ...site, siteUrl: binding.origin, tabId: binding.tabId };
+}
+
+// ---------------------------------------------------------------------------
+// Trạng thái theo tab
+
+export async function getAllStates() {
+  const { states } = await chrome.storage.local.get("states");
+  return states || {};
+}
+
+export async function getState(tabId) {
+  const states = await getAllStates();
+  return { ...DEFAULT_STATE, ...(states[key(tabId)] || {}) };
+}
+
+export async function setState(tabId, patch) {
+  const states = await getAllStates();
+  const next = { ...DEFAULT_STATE, ...(states[key(tabId)] || {}), ...patch };
+  states[key(tabId)] = next;
+  await chrome.storage.local.set({ states });
   return next;
 }
 
-// Tab đang gắn: { tabId, origin }. Lưu ở local vì tabId chỉ có nghĩa trên máy này.
-export async function getBinding() {
-  const { binding } = await chrome.storage.local.get("binding");
-  return binding || null;
+export async function replaceState(tabId, state) {
+  const states = await getAllStates();
+  states[key(tabId)] = { ...DEFAULT_STATE, ...state };
+  await chrome.storage.local.set({ states });
+  return states[key(tabId)];
 }
 
-export async function setBinding(binding) {
-  await chrome.storage.local.set({ binding });
+export async function removeState(tabId) {
+  const states = await getAllStates();
+  delete states[key(tabId)];
+  await chrome.storage.local.set({ states });
 }
 
-export async function clearBinding() {
-  await chrome.storage.local.set({ binding: null });
-}
+// ---------------------------------------------------------------------------
+// Chuyển dữ liệu từ phiên bản cũ (chỉ gắn 1 tab) sang dạng nhiều tab.
 
-export async function getState() {
-  const { state } = await chrome.storage.local.get("state");
-  return { ...DEFAULT_STATE, ...(state || {}) };
-}
+export async function migrateLegacy() {
+  const local = await chrome.storage.local.get(["binding", "state"]);
+  const sync = await chrome.storage.sync.get("config");
+  const legacyBinding = local.binding;
+  const legacyConfig = sync.config;
 
-export async function setState(patch) {
-  const cur = await getState();
-  const next = { ...cur, ...patch };
-  await chrome.storage.local.set({ state: next });
-  return next;
+  if (legacyBinding?.origin) {
+    if (legacyConfig) {
+      const { tokenCookie, marginSec, enabled } = legacyConfig;
+      await saveSiteSettings(legacyBinding.origin, {
+        ...(tokenCookie ? { tokenCookie } : {}),
+        ...(marginSec ? { marginSec } : {}),
+        ...(typeof enabled === "boolean" ? { enabled } : {}),
+      });
+    }
+    await setBinding(legacyBinding.tabId, legacyBinding.origin);
+    if (local.state) await replaceState(legacyBinding.tabId, local.state);
+  }
+  if ("binding" in local || "state" in local) {
+    await chrome.storage.local.remove(["binding", "state"]);
+  }
+  if (legacyConfig) await chrome.storage.sync.remove("config");
+  return Boolean(legacyBinding?.origin);
 }
 
 /** Chuẩn hoá URL về origin; chỉ nhận https (hoặc http://localhost). */
@@ -86,5 +173,13 @@ export function normalizeOrigin(url) {
     return u.origin;
   } catch {
     return null;
+  }
+}
+
+export function hostOf(origin) {
+  try {
+    return new URL(origin).host;
+  } catch {
+    return "";
   }
 }
