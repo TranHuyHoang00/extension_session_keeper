@@ -1,4 +1,5 @@
-import { normalizeOrigin } from "../config.js";
+import { normalizeOrigin, getConfig, saveConfig } from "../config.js";
+import { getExp } from "../jwt.js";
 
 const STATUS_LABEL = {
   unbound: "Chưa gắn tab",
@@ -101,7 +102,54 @@ $("goto").addEventListener("click", async () => {
 });
 $("refresh").addEventListener("click", () => act("refreshNow"));
 $("reset").addEventListener("click", () => act("reset"));
-$("options").addEventListener("click", () => chrome.runtime.openOptionsPage());
+// ---------------------------------------------------------------------------
+// Cài đặt ngay trong panel
+
+const showSettingsResult = (text, kind = "") => {
+  $("settingsResult").textContent = text;
+  $("settingsResult").dataset.kind = kind;
+};
+
+async function openSettings() {
+  const cfg = await getConfig();
+  $("tokenCookie").value = cfg.tokenCookie;
+  $("marginSec").value = cfg.marginSec;
+  $("enabled").checked = cfg.enabled;
+  showSettingsResult("");
+  show($("mainView"), false);
+  show($("settingsView"), true);
+}
+
+function closeSettings() {
+  show($("settingsView"), false);
+  show($("mainView"), true);
+  tick();
+}
+
+$("openSettings").addEventListener("click", openSettings);
+$("closeSettings").addEventListener("click", closeSettings);
+
+$("settingsForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  await saveConfig({
+    tokenCookie: $("tokenCookie").value.trim(),
+    marginSec: Math.max(60, Number($("marginSec").value) || 180),
+    enabled: $("enabled").checked,
+  });
+  showSettingsResult("Đã lưu.", "ok");
+});
+
+$("checkCookie").addEventListener("click", async () => {
+  const cfg = await getConfig();
+  const name = $("tokenCookie").value.trim();
+  if (!cfg.siteUrl) return showSettingsResult("Chưa gắn tab nào. Quay lại và bấm \"Gắn vào tab này\" trước.", "error");
+  if (!name) return showSettingsResult("Nhập tên cookie trước.", "error");
+  const cookie = await chrome.cookies.get({ url: cfg.siteUrl, name });
+  if (!cookie) return showSettingsResult(`Không tìm thấy cookie "${name}" trên ${cfg.siteUrl}. Bạn đã đăng nhập chưa?`, "error");
+  const exp = getExp(cookie.value);
+  if (!exp) return showSettingsResult(`Cookie "${name}" không phải JWT hoặc không có trường exp.`, "error");
+  showSettingsResult(`Tìm thấy token. Hết hạn lúc ${new Date(exp * 1000).toLocaleString("vi-VN")}.`, "ok");
+});
 
 // Side panel được mở riêng cho một tab; tabId nằm trong URL của panel.
 const PANEL_TAB_ID = Number(new URLSearchParams(location.search).get("tabId"));

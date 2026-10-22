@@ -40,8 +40,8 @@ Badge **ON** chỉ hiện trên tab đã gắn.
 
 1. Mở `chrome://extensions`, bật **Developer mode**.
 2. Bấm **Load unpacked**, chọn thư mục gốc của repo này.
-3. Trang Cài đặt sẽ tự mở. Nhập **tên cookie chứa access token** (xem trong DevTools → Application → Cookies) rồi bấm **Lưu**.
-4. Mở website và đăng nhập, bấm icon extension để mở side panel, chọn **Gắn vào tab này** và đồng ý cấp quyền.
+3. Mở website và đăng nhập, bấm icon extension để mở side panel, chọn **Gắn vào tab này** và đồng ý cấp quyền.
+4. Trong side panel bấm **Cài đặt** (mở ngay trong panel, không mở tab mới), nhập **tên cookie chứa access token** (xem trong DevTools → Application → Cookies), bấm **Lưu** rồi **Kiểm tra cookie**.
 5. Side panel hiển thị trạng thái: thời điểm token hết hạn, lần làm mới tiếp theo, lần làm mới gần nhất.
 
 ## Điều kiện để giải pháp hoạt động
@@ -49,7 +49,7 @@ Badge **ON** chỉ hiện trên tab đã gắn.
 Cần kiểm tra tay trước: **khi reload trang lúc token sắp hoặc vừa hết hạn, website có tự refresh token không?**
 Nếu frontend chỉ refresh khi gọi API bị 401, hoặc không refresh lúc tải trang, thì việc reload sẽ không tạo token mới.
 
-Cách thử nhanh: trong Cài đặt đặt "Làm mới trước khi hết hạn" lớn (ví dụ 3600 giây), rồi bấm **Làm mới ngay** trong side panel.
+Cách thử nhanh: trong phần Cài đặt của side panel đặt "Làm mới trước khi hết hạn" lớn (ví dụ 3600 giây), rồi bấm **Làm mới ngay** trong side panel.
 Nếu giờ hết hạn trong side panel tăng lên thì giải pháp chạy được.
 
 ## Giới hạn (đúng thiết kế)
@@ -76,8 +76,7 @@ src/
   config.js          cấu hình, tab đang gắn và trạng thái (chrome.storage)
   jwt.js             đọc exp từ JWT
   detect.js          inject vào trang để phát hiện CAPTCHA / trang đăng nhập
-  panel/             side panel theo từng tab (gắn / bỏ gắn tab, trạng thái)
-  options/           trang cài đặt
+  panel/             side panel theo từng tab (gắn / bỏ gắn tab, trạng thái, cài đặt)
   ui.css
 icons/
 test/                test logic background với chrome giả lập (Node)

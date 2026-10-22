@@ -395,10 +395,9 @@ function openPanelForTab(tab) {
 
 chrome.action.onClicked.addListener(openPanelForTab);
 
-chrome.runtime.onInstalled.addListener(({ reason }) => {
+chrome.runtime.onInstalled.addListener(() => {
   serial(disablePanelGlobally);
   serial(schedule);
-  if (reason === "install") chrome.runtime.openOptionsPage();
 });
 
 chrome.runtime.onStartup.addListener(() => {

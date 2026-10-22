@@ -11,30 +11,66 @@
     <span id="status" class="pill">…</span>
   </header>
 
-  <section id="bindBox" class="bind">
-    <p id="bindText"></p>
+  <!-- Màn hình chính -->
+  <main id="mainView">
+    <section id="bindBox" class="bind">
+      <p id="bindText"></p>
+      <div class="actions">
+        <button id="bind">Gắn vào tab này</button>
+        <button id="unbind" class="secondary">Bỏ gắn</button>
+        <button id="goto" class="secondary">Mở tab đã gắn</button>
+      </div>
+    </section>
+
+    <p id="message" class="message"></p>
+
+    <dl class="facts" id="facts">
+      <dt>Website</dt><dd id="site">–</dd>
+      <dt>Token hết hạn</dt><dd id="exp">–</dd>
+      <dt>Làm mới lúc</dt><dd id="next">–</dd>
+      <dt>Lần làm mới gần nhất</dt><dd id="last">–</dd>
+      <dt>Thất bại liên tiếp</dt><dd id="fails">0</dd>
+    </dl>
+
     <div class="actions">
-      <button id="bind">Gắn vào tab này</button>
-      <button id="unbind" class="secondary">Bỏ gắn</button>
-      <button id="goto" class="secondary">Mở tab đã gắn</button>
+      <button id="refresh">Làm mới ngay</button>
+      <button id="reset" class="secondary">Đặt lại</button>
+      <button id="openSettings" class="link">Cài đặt</button>
     </div>
+  </main>
+
+  <!-- Cài đặt (cùng panel, không mở tab mới) -->
+  <section id="settingsView" class="settings" hidden>
+    <h2>Cài đặt</h2>
+    <form id="settingsForm">
+      <label>
+        Tên cookie chứa access token (JWT)
+        <input id="tokenCookie" type="text" placeholder="access_token" required />
+        <small>Xem trong DevTools → Application → Cookies của website.</small>
+      </label>
+
+      <label>
+        Làm mới trước khi hết hạn (giây)
+        <input id="marginSec" type="number" min="60" max="86400" step="30" required />
+      </label>
+
+      <label class="row">
+        <input id="enabled" type="checkbox" />
+        Bật tự động giữ phiên
+      </label>
+
+      <div class="actions">
+        <button type="submit">Lưu</button>
+        <button type="button" id="checkCookie" class="secondary">Kiểm tra cookie</button>
+        <button type="button" id="closeSettings" class="link">← Quay lại</button>
+      </div>
+    </form>
+    <p id="settingsResult" class="message"></p>
+    <p class="hint">
+      Extension không tự gọi API, không lưu giá trị token và không mở tab mới. Nó chỉ reload
+      tab đã gắn trước khi token hết hạn để website tự làm mới token.
+    </p>
   </section>
-
-  <p id="message" class="message"></p>
-
-  <dl class="facts" id="facts">
-    <dt>Website</dt><dd id="site">–</dd>
-    <dt>Token hết hạn</dt><dd id="exp">–</dd>
-    <dt>Làm mới lúc</dt><dd id="next">–</dd>
-    <dt>Lần làm mới gần nhất</dt><dd id="last">–</dd>
-    <dt>Thất bại liên tiếp</dt><dd id="fails">0</dd>
-  </dl>
-
-  <div class="actions">
-    <button id="refresh">Làm mới ngay</button>
-    <button id="reset" class="secondary">Đặt lại</button>
-    <button id="options" class="link">Cài đặt</button>
-  </div>
 
   <script type="module" src="panel.js"></script>
 </body>
