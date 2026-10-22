@@ -23,6 +23,9 @@ export function createChromeMock() {
     badge: "",
     tabBadges: {},
     created: [],
+    panelOptions: [],
+    panelOpened: [],
+    panelBehavior: null,
     pageState: { captcha: false, login: false, path: "/" },
     nextTabId: 100,
     granted: true,
@@ -69,7 +72,13 @@ export function createChromeMock() {
     },
     windows: { update: async () => {} },
     scripting: { executeScript: async () => [{ result: db.pageState }] },
+    sidePanel: {
+      setPanelBehavior: async (b) => { db.panelBehavior = b; },
+      setOptions: async (o) => { db.panelOptions.push(o); },
+      open: async (o) => { db.panelOpened.push(o.tabId); },
+    },
     action: {
+      onClicked: event(),
       setBadgeText: async ({ tabId, text }) => {
         if (tabId == null) db.badge = text;
         else db.tabBadges[tabId] = text;

@@ -31,6 +31,8 @@ beforeEach(() => {
   db.tabBadges = {};
   db.pageState = { captcha: false, login: false, path: "/" };
   db.granted = true;
+  db.panelOptions = [];
+  db.panelOpened = [];
 });
 
 test("đọc exp từ JWT", () => {
@@ -188,4 +190,21 @@ test("không bao giờ lưu giá trị token vào storage", async () => {
   await bg.startRefresh({ manual: true });
   const dump = JSON.stringify({ sync: db.sync, local: db.local });
   assert.ok(!dump.includes(token.split(".")[1]));
+});
+
+test("side panel: tắt mặc định cho mọi tab, chỉ bật cho tab được bấm icon", async () => {
+  await bg.disablePanelGlobally();
+  assert.deepEqual(db.panelBehavior, { openPanelOnActionClick: false });
+  assert.deepEqual(db.panelOptions.at(-1), { enabled: false });
+
+  bg.openPanelForTab({ id: 3 });
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(db.panelOptions.at(-1), {
+    tabId: 3,
+    path: "src/panel/panel.html?tabId=3",
+    enabled: true,
+  });
+  assert.deepEqual(db.panelOpened, [3]);
+  // Không có tab nào khác được bật panel
+  assert.ok(db.panelOptions.every((o) => o.tabId === undefined || o.tabId === 3));
 });

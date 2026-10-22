@@ -365,14 +365,46 @@ async function onBrowserStartup() {
 }
 
 // ---------------------------------------------------------------------------
+// Side panel theo từng tab
+//
+// Mặc định side panel bị TẮT cho mọi tab. Bấm icon extension ở tab nào thì chỉ bật
+// side panel cho đúng tab đó, nên mở tab mới sẽ không thấy panel.
+
+const PANEL_PATH = "src/panel/panel.html";
+
+function panelPathFor(tabId) {
+  return `${PANEL_PATH}?tabId=${tabId}`;
+}
+
+async function disablePanelGlobally() {
+  await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
+  await chrome.sidePanel.setOptions({ enabled: false });
+}
+
+// Không dùng await trước sidePanel.open: Chrome chỉ cho mở panel ngay trong lần bấm của người dùng.
+function openPanelForTab(tab) {
+  if (!tab?.id) return;
+  chrome.sidePanel.setOptions({ tabId: tab.id, path: panelPathFor(tab.id), enabled: true });
+  chrome.sidePanel.open({ tabId: tab.id }).catch((err) =>
+    console.warn("[SessionKeeper] open side panel failed", err)
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Đăng ký sự kiện (phải ở top-level để service worker được đánh thức đúng)
 
+chrome.action.onClicked.addListener(openPanelForTab);
+
 chrome.runtime.onInstalled.addListener(({ reason }) => {
+  serial(disablePanelGlobally);
   serial(schedule);
   if (reason === "install") chrome.runtime.openOptionsPage();
 });
 
-chrome.runtime.onStartup.addListener(() => serial(onBrowserStartup));
+chrome.runtime.onStartup.addListener(() => {
+  serial(disablePanelGlobally);
+  serial(onBrowserStartup);
+});
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === ALARM_REFRESH) serial(() => startRefresh());
@@ -453,4 +485,6 @@ export const __test__ = {
   bindTab,
   unbind,
   onBrowserStartup,
+  openPanelForTab,
+  disablePanelGlobally,
 };

@@ -98,15 +98,32 @@ $("goto").addEventListener("click", async () => {
   const { config } = await send("getStatus");
   const tab = await chrome.tabs.update(config.boundTabId, { active: true });
   await chrome.windows.update(tab.windowId, { focused: true });
-  window.close();
 });
 $("refresh").addEventListener("click", () => act("refreshNow"));
 $("reset").addEventListener("click", () => act("reset"));
 $("options").addEventListener("click", () => chrome.runtime.openOptionsPage());
 
-(async () => {
-  [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  currentOrigin = currentTab ? normalizeOrigin(currentTab.url || "") : null;
+// Side panel được mở riêng cho một tab; tabId nằm trong URL của panel.
+const PANEL_TAB_ID = Number(new URLSearchParams(location.search).get("tabId"));
+
+async function loadTab() {
+  try {
+    currentTab = Number.isInteger(PANEL_TAB_ID) && PANEL_TAB_ID > 0
+      ? await chrome.tabs.get(PANEL_TAB_ID)
+      : (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
+  } catch {
+    currentTab = null;
+  }
+  currentOrigin = currentTab ? normalizeOrigin(currentTab.pendingUrl || currentTab.url || "") : null;
+}
+
+async function tick() {
+  await loadTab(); // tab có thể đã chuyển trang
   await render();
-  setInterval(render, 5000);
-})();
+}
+
+tick();
+setInterval(tick, 5000);
+chrome.tabs.onUpdated.addListener((tabId, info) => {
+  if (tabId === PANEL_TAB_ID && info.status === "complete") tick();
+});

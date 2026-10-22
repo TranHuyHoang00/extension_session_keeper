@@ -27,8 +27,8 @@
 body { margin: 0; background: var(--bg); }
 h1 { font-size: 16px; margin: 0; }
 
-.popup { width: 340px; padding: 14px; }
-.popup header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.panel { padding: 14px; min-width: 260px; }
+.panel header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .pill {
   font-size: 12px; padding: 2px 10px; border-radius: 999px;
   border: 1px solid var(--border); color: var(--muted);

@@ -8,7 +8,7 @@ không bị ảnh hưởng, và extension không bao giờ tự mở tab mới.
 
 ## Cách hoạt động
 
-1. Bạn mở website, bấm icon extension và chọn **Gắn vào tab này**.
+1. Bạn mở website, bấm icon extension để mở **side panel** cho tab đó, rồi chọn **Gắn vào tab này**.
 2. Extension đọc cookie chứa access token (JWT) bằng `chrome.cookies`, kể cả cookie HttpOnly, và lấy trường `exp`.
 3. Hẹn giờ bằng `chrome.alarms` để chạy trước `exp` một khoảng (mặc định 3 phút).
 4. Đến giờ, extension reload **tab đã gắn**. Frontend của website tải lại sẽ tự dùng refresh token để lấy token mới.
@@ -33,6 +33,7 @@ gắn tab ──► cookie (exp) ──► alarm (exp − margin) ──► relo
 | Khởi động lại trình duyệt | Bỏ gắn (mã tab cũ không còn đúng), báo bạn gắn lại |
 | Gắn sang tab khác | Tab cũ được bỏ gắn, chỉ tab mới được giữ phiên |
 
+Side panel mặc định tắt cho mọi tab: bấm icon ở tab nào thì chỉ tab đó có panel, mở tab mới sẽ không thấy panel.
 Badge **ON** chỉ hiện trên tab đã gắn.
 
 ## Cài đặt (chế độ developer)
@@ -40,16 +41,16 @@ Badge **ON** chỉ hiện trên tab đã gắn.
 1. Mở `chrome://extensions`, bật **Developer mode**.
 2. Bấm **Load unpacked**, chọn thư mục gốc của repo này.
 3. Trang Cài đặt sẽ tự mở. Nhập **tên cookie chứa access token** (xem trong DevTools → Application → Cookies) rồi bấm **Lưu**.
-4. Mở website và đăng nhập, bấm icon extension, chọn **Gắn vào tab này** và đồng ý cấp quyền.
-5. Bấm icon để xem trạng thái: thời điểm token hết hạn, lần làm mới tiếp theo, lần làm mới gần nhất.
+4. Mở website và đăng nhập, bấm icon extension để mở side panel, chọn **Gắn vào tab này** và đồng ý cấp quyền.
+5. Side panel hiển thị trạng thái: thời điểm token hết hạn, lần làm mới tiếp theo, lần làm mới gần nhất.
 
 ## Điều kiện để giải pháp hoạt động
 
 Cần kiểm tra tay trước: **khi reload trang lúc token sắp hoặc vừa hết hạn, website có tự refresh token không?**
 Nếu frontend chỉ refresh khi gọi API bị 401, hoặc không refresh lúc tải trang, thì việc reload sẽ không tạo token mới.
 
-Cách thử nhanh: trong Cài đặt đặt "Làm mới trước khi hết hạn" lớn (ví dụ 3600 giây), rồi bấm **Làm mới ngay** trong popup.
-Nếu giờ hết hạn trong popup tăng lên thì giải pháp chạy được.
+Cách thử nhanh: trong Cài đặt đặt "Làm mới trước khi hết hạn" lớn (ví dụ 3600 giây), rồi bấm **Làm mới ngay** trong side panel.
+Nếu giờ hết hạn trong side panel tăng lên thì giải pháp chạy được.
 
 ## Giới hạn (đúng thiết kế)
 
@@ -75,7 +76,7 @@ src/
   config.js          cấu hình, tab đang gắn và trạng thái (chrome.storage)
   jwt.js             đọc exp từ JWT
   detect.js          inject vào trang để phát hiện CAPTCHA / trang đăng nhập
-  popup/             giao diện khi bấm icon (gắn / bỏ gắn tab, trạng thái)
+  panel/             side panel theo từng tab (gắn / bỏ gắn tab, trạng thái)
   options/           trang cài đặt
   ui.css
 icons/
