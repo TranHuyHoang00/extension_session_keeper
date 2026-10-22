@@ -1,0 +1,12 @@
+{
+  "name": "extension-session-keeper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome extension giữ phiên đăng nhập bằng cách để website tự refresh token trước khi hết hạn.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check": "for f in src/*.js src/*/*.js; do node --check \"$f\" || exit 1; done",
+    "zip": "zip -r session-keeper.zip manifest.json src icons"
+  }
+}
