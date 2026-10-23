@@ -77,13 +77,23 @@ async function readTokenExp(cfg) {
 
 // (Tuỳ chọn, mặc định tắt) Đẩy token mới lên server cục bộ để máy/dự án khác lấy.
 // Chỉ gửi khi website có cấu hình relayUrl. Luôn kèm khóa bí mật. Không ghi token ra log.
+//
+// QUAN TRỌNG: KHÔNG gọi hàm này bằng await bên trong serial(). Request mạng có thể treo
+// (ngrok/server chậm) và sẽ chặn mọi sự kiện của mọi tab. Phần gửi chạy ngoài hàng đợi;
+// chỉ phần ghi kết quả vào state/log mới đưa vào serial().
+const RELAY_TIMEOUT_MS = 15_000;
+
 async function relayToken(tabId, cfg, exp, { manual = false } = {}) {
   if (!relayEnabled(cfg)) {
     if (manual) throw new Error("Website này chưa bật đẩy token (Cài đặt → Nâng cao).");
     return;
   }
   const record = (ok, info, level, msg) =>
-    Promise.all([setState(tabId, { relayAt: Date.now(), relayOk: ok, relayInfo: info }), tlog(tabId, level, msg)]);
+    serial(async () => {
+      if (!(await getBinding(tabId))) return; // tab đã bỏ gắn trong lúc gửi
+      await setState(tabId, { relayAt: Date.now(), relayOk: ok, relayInfo: info });
+      await tlog(tabId, level, msg);
+    });
 
   const cookie = await chrome.cookies.get({ url: cfg.siteUrl, name: cfg.tokenCookie });
   if (!cookie) {
@@ -94,8 +104,14 @@ async function relayToken(tabId, cfg, exp, { manual = false } = {}) {
   try {
     const res = await fetch(cfg.relayUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Session-Keeper-Key": cfg.relayKey || "" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Session-Keeper-Key": cfg.relayKey || "",
+        // ngrok free: bỏ qua trang cảnh báo trình duyệt (nếu không có thể nhận HTML thay vì server của bạn).
+        "ngrok-skip-browser-warning": "1",
+      },
       body: JSON.stringify({ site: hostOf(cfg.siteUrl), cookie: cfg.tokenCookie, token: cookie.value, exp }),
+      signal: AbortSignal.timeout(RELAY_TIMEOUT_MS),
     });
     if (res.ok) {
       await record(true, `đã gửi tới ${target}`, "info", `Đã đẩy token lên ${target}.`);
@@ -103,8 +119,19 @@ async function relayToken(tabId, cfg, exp, { manual = false } = {}) {
       await record(false, `server trả ${res.status}`, "warn", `Đẩy token thất bại: server trả ${res.status}.`);
     }
   } catch (err) {
-    await record(false, `không gửi được: ${err?.message || err}`, "warn", `Không gửi được token lên server: ${err?.message || err}`);
+    const reason =
+      err?.name === "TimeoutError" || err?.name === "AbortError"
+        ? `server không phản hồi sau ${RELAY_TIMEOUT_MS / 1000}s`
+        : err?.message || String(err);
+    await record(false, `không gửi được: ${reason}`, "warn", `Không gửi được token lên server: ${reason}.`);
   }
+}
+
+// Gửi nền, không chặn hàng đợi sự kiện.
+function relayInBackground(tabId, cfg, exp) {
+  relayToken(tabId, cfg, exp).catch((err) =>
+    log("error", `Lỗi khi đẩy token: ${err?.message || err}`, { tabId, site: hostOf(cfg.siteUrl) })
+  );
 }
 
 async function getTab(tabId) {
@@ -413,7 +440,10 @@ async function onTokenCookieChanged(tabId) {
       lastSuccessAt: Date.now(),
       attemptExp: null,
     });
-    await relayToken(tabId, cfg, exp); // đẩy token lên server cục bộ nếu website này có bật
+    // Hẹn lịch trước, rồi mới đẩy token ở nền: server chậm/treo không được làm kẹt lịch.
+    const result = await schedule(tabId);
+    relayInBackground(tabId, cfg, exp);
+    return result;
   }
   return schedule(tabId);
 }
@@ -703,7 +733,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   };
   const handler = handlers[msg?.type];
   if (!handler || !Number.isInteger(tabId)) return false;
-  serial(handler)
+  // relayNow có request mạng nên chạy ngoài hàng đợi (nó tự đưa phần ghi kết quả vào serial).
+  const run = msg.type === "relayNow" ? handler() : serial(handler);
+  run
     .then((result) => sendResponse({ ok: true, result }))
     .catch((err) => sendResponse({ ok: false, error: err?.message || String(err) }));
   return true; // trả lời bất đồng bộ

@@ -34,8 +34,17 @@ function fmt(ms) {
   return `${new Date(ms).toLocaleString("vi-VN")} (${diff >= 0 ? "còn " + rel : rel + " trước"})`;
 }
 
+// Không để panel chờ mãi nếu background bị kẹt: báo lỗi để lần tick sau còn chạy lại.
+const SEND_TIMEOUT_MS = 20_000;
+
 async function send(type) {
-  const res = await chrome.runtime.sendMessage({ type, tabId: TAB_ID });
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("Background không phản hồi, sẽ thử lại…")), SEND_TIMEOUT_MS);
+  });
+  const res = await Promise.race([chrome.runtime.sendMessage({ type, tabId: TAB_ID }), timeout]).finally(() =>
+    clearTimeout(timer)
+  );
   if (!res?.ok) throw new Error(res?.error || "Không có phản hồi");
   return res.result;
 }
